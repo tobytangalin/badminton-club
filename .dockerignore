@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.gitignore
+README.md
+*.md
+.env*
+Dockerfile
+cloudbuild.yaml
+deploy.sh
+firestore.rules
+firestore.indexes.json
+storage.rules
+.next

@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function validStars(stars) {
+      return stars is int && stars >= 1 && stars <= 5;
+    }
+
+    // Users ------------------------------------------------------------
+    // Default role is 'member'. Only an admin (or the user themself without
+    // changing their own role) may update a profile. The first admin is
+    // bootstrapped server-side (see app/api/bootstrap).
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if isSelf(uid)
+        && request.resource.data.role == 'member'
+        && request.resource.data.nickname is string;
+      allow update: if (isSelf(uid) && request.resource.data.role == resource.data.role)
+        || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Sessions ---------------------------------------------------------
+    // Admins manage sessions. Members may only change the denormalized
+    // registration 'count' (+1 / -1) as part of a register/unregister
+    // transaction against the subcollection below.
+    match /sessions/{sessionId} {
+      function isRegistrationCountChange() {
+        return signedIn()
+          && (request.resource.data.count == resource.data.count + 1
+            || request.resource.data.count == resource.data.count - 1);
+      }
+
+      allow read: if signedIn();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || isRegistrationCountChange();
+      allow delete: if isAdmin();
+
+      match /registrations/{uid} {
+        allow read: if signedIn();
+        allow create: if isSelf(uid)
+          && !exists(/databases/$(database)/documents/sessions/$(sessionId)/registrations/$(uid));
+        allow update: if false;
+        allow delete: if isSelf(uid) || isAdmin();
+      }
+    }
+
+    // Ratings ----------------------------------------------------------
+    // A rating doc id is `${ratedUid}_${raterUid}` so each player can be
+    // rated at most once by each other player (re-rating overwrites).
+    match /ratings/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.raterUid == request.auth.uid
+        && request.resource.data.ratedUid != request.auth.uid
+        && validStars(request.resource.data.stars);
+      allow update: if signedIn()
+        && resource.data.raterUid == request.auth.uid
+        && request.resource.data.ratedUid == resource.data.ratedUid
+        && validStars(request.resource.data.stars);
+      allow delete: if signedIn() && resource.data.raterUid == request.auth.uid;
+    }
+
+    // Matches (future feature: record match results) -------------------
+    // Subcollection of sessions; admin records doubles/singles results.
+    match /sessions/{sessionId}/matches/{matchId} {
+      allow read: if signedIn();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

@@ -1,0 +1,52 @@
+# Builds and pushes the image to Artifact Registry using Cloud Build
+# (no local Docker required). Deploying is done separately by the user's own
+# gcloud account to avoid extra IAM grants — see deploy-cloudbuild.sh.
+#
+# Usage:
+#   gcloud builds submit --config=cloudbuild.push.yaml \
+#     --substitutions=_NEXT_PUBLIC_FIREBASE_API_KEY=...,... .
+#
+# Cloud Build free tier: 2,500 build-minutes/month.
+
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/badminton-club:${_COMMIT_SHA}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_API_KEY=${_NEXT_PUBLIC_FIREBASE_API_KEY}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_PROJECT_ID=${_NEXT_PUBLIC_FIREBASE_PROJECT_ID}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${_NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${_NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_APP_ID=${_NEXT_PUBLIC_FIREBASE_APP_ID}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_CURRENCY=${_NEXT_PUBLIC_CURRENCY}"
+      - "."
+
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/badminton-club:${_COMMIT_SHA}"
+
+substitutions:
+  _REGION: us-east1
+  _REPO: badminton-club
+  _COMMIT_SHA: ${BUILD_ID}
+  _NEXT_PUBLIC_CURRENCY: DKK
+  # NEXT_PUBLIC_FIREBASE_* have no defaults — always pass them as substitutions.
+  _NEXT_PUBLIC_FIREBASE_API_KEY: ""
+  _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ""
+  _NEXT_PUBLIC_FIREBASE_PROJECT_ID: ""
+  _NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ""
+  _NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ""
+  _NEXT_PUBLIC_FIREBASE_APP_ID: ""
+
+options:
+  logging: CLOUD_LOGGING_ONLY

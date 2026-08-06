@@ -1,7 +1,5 @@
+import { HomeContent } from "@/components/home/HomeContent";
+
 export default function Home() {
-  return (
-    <main>
-      <div>Hello world!</div>
-    </main>
-  );
+  return <HomeContent />;
 }
