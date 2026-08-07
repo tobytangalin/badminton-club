@@ -3,13 +3,16 @@ import { cn } from "@/lib/cn";
 export function Shuttle({
   size = 14,
   filled = true,
+  ghost = false,
 }: {
   size?: number;
   filled?: boolean;
+  /** Show empty shuttles as faint outlines instead of hiding them. */
+  ghost?: boolean;
 }) {
   return (
     <span
-      className={cn("inline-block", !filled && "opacity-0")}
+      className={cn("inline-block", !filled && (ghost ? "opacity-30" : "opacity-0"))}
       aria-hidden
     >
       {/* eslint-disable-next-line @next/next/no-img-element -- tiny local icon */}

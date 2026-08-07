@@ -56,7 +56,7 @@ export function StarRating({
               onChange && !disabled ? "cursor-pointer hover:scale-110" : ""
             )}
           >
-            <Shuttle size={iconSize[size]} filled={filled} />
+            <Shuttle size={iconSize[size]} filled={filled} ghost />
           </button>
         );
       })}
