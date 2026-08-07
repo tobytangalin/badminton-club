@@ -44,6 +44,7 @@ function PublicLanding() {
       </section>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        {/* eslint-disable-next-line @next/next/no-img-element -- hero is pre-optimized WebP from Firebase Storage */}
         <img
           src="https://firebasestorage.googleapis.com/v0/b/social-badminton.firebasestorage.app/o/landing%2Fhero.webp?alt=media"
           alt="Badminton players at Social &amp; Badminton Club"
@@ -53,7 +54,7 @@ function PublicLanding() {
 
       <section className="space-y-4 text-slate-700">
         <p>
-          At our club we welcome everyone — whether you&apos;re a total beginner
+          At our club we welcome everyone, whether you&apos;re a total beginner
           or an experienced player. Our focus is on creating a relaxed,
           inclusive environment where people of all skill levels can enjoy the
           game, meet new people, and have a great time on and off the court.
@@ -64,7 +65,7 @@ function PublicLanding() {
           sessions and register your spot.
         </p>
         <p>
-          No racket? No problem! You&apos;re welcome to come without one — many
+          No racket? No problem! You&apos;re welcome to come without one. Many
           players are happy to share, and we provide shuttlecocks for all
           games.
         </p>
@@ -73,7 +74,7 @@ function PublicLanding() {
           number of hours played, so everyone just pays their fair share.
         </p>
         <p>
-          After playing, we occasionally go out for dinner together — a great
+          After playing, we occasionally go out for dinner together; a great
           way to unwind, chat, and connect with fellow players in a casual
           setting.
         </p>

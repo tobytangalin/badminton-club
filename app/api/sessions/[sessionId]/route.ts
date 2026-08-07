@@ -25,7 +25,7 @@ export async function PATCH(
   }
 
   const update: Record<string, unknown> = {};
-  for (const key of ["title", "day", "time", "location"] as const) {
+  for (const key of ["date", "startTime", "endTime", "location"] as const) {
     if (typeof body?.[key] === "string") update[key] = body[key];
   }
   if (Number.isInteger(body?.capacity) && body.capacity >= 1) {

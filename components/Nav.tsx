@@ -37,9 +37,15 @@ export function Nav() {
 
   return (
     <>
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
+      <header
+        className={cn(
+          "sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur",
+          user && "hidden md:block"
+        )}
+      >
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-4">
           <Link href="/" className="flex items-center gap-2 font-bold text-slate-900">
+            {/* eslint-disable-next-line @next/next/no-img-element -- logo is pre-optimized WebP from Firebase Storage */}
             <img
               src="https://firebasestorage.googleapis.com/v0/b/social-badminton.firebasestorage.app/o/landing%2Flogo.webp?alt=media"
               alt="Social &amp; Badminton Club logo"
@@ -96,7 +102,7 @@ export function Nav() {
 
       {user && (
         <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
-          <div className={cn("grid", isAdmin ? "grid-cols-4" : "grid-cols-3")}>
+          <div className={cn("grid", isAdmin ? "grid-cols-5" : "grid-cols-4")}>
             {links.map((link) => {
               const active = pathname === link.href;
               return (
@@ -113,6 +119,27 @@ export function Nav() {
                 </Link>
               );
             })}
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="flex flex-col items-center gap-0.5 py-2.5 text-xs font-medium text-slate-500"
+            >
+              <span className="size-[18px]">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="size-full"
+                >
+                  <path d="M12 2v10" />
+                  <path d="M18.4 6.6a9 9 0 1 1-12.77.04" />
+                </svg>
+              </span>
+              Sign out
+            </button>
           </div>
         </nav>
       )}

@@ -85,6 +85,7 @@ export function CommitteeContent() {
             className="rounded-2xl border border-slate-200 bg-white p-4 text-center"
           >
             {m.photo ? (
+              // eslint-disable-next-line @next/next/no-img-element -- photos are pre-optimized WebP from Firebase Storage
               <img
                 src={base + m.photo + "?alt=media"}
                 alt={m.name}
@@ -99,7 +100,7 @@ export function CommitteeContent() {
             <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-teal-700">
               {m.role}
             </p>
-            <h2 className="mt-1 font-semibold text-slate-900">{m.name}</h2>
+            <h2 className="mt-1 break-words font-semibold text-slate-900">{m.name}</h2>
             {m.title && <p className="text-sm text-slate-600">{m.title}</p>}
             {m.company && <p className="text-sm text-slate-500">{m.company}</p>}
           </div>

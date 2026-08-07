@@ -10,11 +10,15 @@ export interface UserDoc {
 }
 
 export interface SessionDoc {
-  title: string;
-  day: string;
-  time: string;
+  /** ISO `YYYY-MM-DD`. */
+  date: string;
+  /** 24-hour `HH:MM`. */
+  startTime: string;
+  /** 24-hour `HH:MM`. */
+  endTime: string;
   location: string;
-  capacity: number;
+  /** Optional max players; null/absent means no limit. */
+  capacity?: number | null;
   count: number;
   /** Total cost of the session, shared between the players who played. */
   cost?: number | null;

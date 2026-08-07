@@ -15,7 +15,7 @@ import {
   ref as storageRef,
   uploadBytes,
 } from "firebase/storage";
-import { getDb, getStorageClient } from "@/lib/firebase";
+import { getAuthClient, getDb, getStorageClient } from "@/lib/firebase";
 import type {
   LeaderboardEntry,
   Rating,
@@ -96,7 +96,9 @@ export async function registerForSession(
     if (regSnap.exists()) throw new Error("You are already registered.");
     const session = sessionSnap.data() as SessionDoc | undefined;
     if (!session) throw new Error("Session not found.");
-    if (session.count >= session.capacity) throw new Error("Session is full.");
+    if (typeof session.capacity === "number" && session.count >= session.capacity) {
+      throw new Error("Session is full.");
+    }
     tx.set(regRef, {
       uid,
       nickname: user.nickname,
@@ -233,6 +235,20 @@ export async function deleteSession(id: string): Promise<void> {
 
 export async function setUserRole(uid: string, role: "member" | "admin"): Promise<void> {
   await updateDoc(userDoc(uid), { role });
+}
+
+/** Permanently delete a user (account, profile, ratings, registrations) via the admin API. */
+export async function deleteUserAccount(targetUid: string): Promise<void> {
+  const token = await getAuthClient().currentUser?.getIdToken();
+  if (!token) throw new Error("Not signed in.");
+  const res = await fetch(`/api/admin/users/${targetUid}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || "Could not delete user.");
+  }
 }
 
 export function ratingId(ratedUid: string, raterUid: string): string {

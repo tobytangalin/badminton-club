@@ -23,7 +23,7 @@ export function Avatar({ src, name, size = "md", className }: AvatarProps) {
 
   if (src) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
+      // eslint-disable-next-line @next/next/no-img-element -- remote avatars are already optimized
       <img
         src={src}
         alt={name ?? "avatar"}

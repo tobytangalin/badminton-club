@@ -14,25 +14,30 @@ export async function POST(request: NextRequest) {
     return json({ error: "Invalid JSON" }, 400);
   }
 
-  const { title, day, time, location, capacity } = body ?? {};
+  const { date, startTime, endTime, location, capacity } = body ?? {};
   if (
-    typeof title !== "string" ||
-    typeof day !== "string" ||
-    typeof time !== "string" ||
-    typeof location !== "string" ||
-    !Number.isInteger(capacity) ||
-    capacity < 1
+    typeof date !== "string" ||
+    typeof startTime !== "string" ||
+    typeof endTime !== "string" ||
+    typeof location !== "string"
+  ) {
+    return json({ error: "Invalid session payload" }, 400);
+  }
+  if (
+    capacity !== undefined &&
+    capacity !== null &&
+    (!Number.isInteger(capacity) || capacity < 1)
   ) {
     return json({ error: "Invalid session payload" }, 400);
   }
 
   const db = getAdminDb();
   const ref = await db.collection("sessions").add({
-    title,
-    day,
-    time,
+    date,
+    startTime,
+    endTime,
     location,
-    capacity,
+    ...(capacity === undefined || capacity === null ? {} : { capacity }),
     count: 0,
     createdAt: FieldValue.serverTimestamp(),
   });

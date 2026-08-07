@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { onSnapshot } from "firebase/firestore";
 import { Avatar } from "@/components/Avatar";
-import { setUserRole, usersRef } from "@/lib/db";
+import { deleteUserAccount, setUserRole, usersRef } from "@/lib/db";
 import { useWhenVisible } from "@/lib/useWhenVisible";
 import type { Role, UserDoc } from "@/lib/types";
 
@@ -34,6 +34,26 @@ export function AdminUsers({ currentUid }: { currentUid: string }) {
     } catch (err) {
       console.error(err);
       setError("Could not update role.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeUser(uid: string, nickname: string) {
+    if (
+      !window.confirm(
+        `Delete ${nickname || "this user"}? This permanently removes their account, ratings and registrations.`
+      )
+    ) {
+      return;
+    }
+    setBusy(uid);
+    setError("");
+    try {
+      await deleteUserAccount(uid);
+    } catch (err) {
+      console.error(err);
+      setError("Could not delete user.");
     } finally {
       setBusy(null);
     }
@@ -76,14 +96,24 @@ export function AdminUsers({ currentUid }: { currentUid: string }) {
                 {isAdmin ? "admin" : "member"}
               </span>
               {!isSelf && (
-                <button
-                  type="button"
-                  disabled={busy === u.uid}
-                  onClick={() => toggleRole(u.uid, u.data.role)}
-                  className="rounded-lg border border-slate-300 px-3 py-1 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
-                >
-                  {isAdmin ? "Remove admin role" : "Make admin"}
-                </button>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    disabled={busy === u.uid}
+                    onClick={() => toggleRole(u.uid, u.data.role)}
+                    className="rounded-lg border border-slate-300 px-3 py-1 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {isAdmin ? "Remove admin role" : "Make admin"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === u.uid}
+                    onClick={() => removeUser(u.uid, u.data.nickname)}
+                    className="rounded-lg border border-red-200 px-3 py-1 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    Delete
+                  </button>
+                </div>
               )}
             </li>
           );

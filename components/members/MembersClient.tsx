@@ -6,7 +6,6 @@ import { FractionalShuttle } from "@/components/Shuttle";
 import { InfoTooltip } from "@/components/InfoTooltip";
 import { StarRating } from "@/components/StarRating";
 import { Spinner } from "@/components/Spinner";
-import { cn } from "@/lib/cn";
 import {
   clearRating,
   fetchLeaderboard,
@@ -26,6 +25,8 @@ function SortHeader({
   dir,
   onToggle,
   className,
+  tooltipOpen,
+  onTooltipToggle,
 }: {
   label: string;
   info?: string;
@@ -34,6 +35,8 @@ function SortHeader({
   dir: SortDir;
   onToggle: (key: SortKey) => void;
   className?: string;
+  tooltipOpen?: boolean;
+  onTooltipToggle?: () => void;
 }) {
   const arrow = !active ? "" : dir === "asc" ? " ↑" : " ↓";
   return (
@@ -47,7 +50,13 @@ function SortHeader({
           {label}
           <span className="text-[10px] leading-none">{arrow}</span>
         </button>
-        {info && <InfoTooltip label={info} />}
+        {info && (
+          <InfoTooltip
+            label={info}
+            open={tooltipOpen ?? false}
+            onToggle={onTooltipToggle ?? (() => {})}
+          />
+        )}
       </div>
     </th>
   );
@@ -59,7 +68,11 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
   const [error, setError] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("power");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [expandedUid, setExpandedUid] = useState<string | null>(null);
+  const [openTooltip, setOpenTooltip] = useState<string | null>(null);
+
+  function toggleTooltip(key: string) {
+    setOpenTooltip((cur) => (cur === key ? null : key));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -154,12 +167,19 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
                   active={sortKey === "power"}
                   dir={sortDir}
                   onToggle={toggleSort}
+                  tooltipOpen={openTooltip === "power"}
+                  onTooltipToggle={() => toggleTooltip("power")}
                   className="py-3 pr-3 text-left text-xs font-medium"
                 />
                 <th className="py-3 pr-4 text-right text-xs font-medium text-slate-400">
                   <div className="inline-flex items-center gap-1">
                     My rating
-                    <InfoTooltip align="right" label="Tap to rate. 1 shuttle = beginner, 5 shuttles = our club's best players." />
+                    <InfoTooltip
+                      align="right"
+                      label="Tap to rate. 1 shuttle = beginner, 5 shuttles = our club's best players."
+                      open={openTooltip === "rating"}
+                      onToggle={() => toggleTooltip("rating")}
+                    />
                   </div>
                 </th>
               </tr>
@@ -167,14 +187,10 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
             <tbody>
               {sorted.map((entry, idx) => {
                 const isSelf = entry.uid === currentUid;
-                const expanded = expandedUid === entry.uid;
                 return (
                   <tr
                     key={entry.uid}
                     className="group border-b border-slate-100 last:border-0"
-                    onClick={() =>
-                      setExpandedUid((cur) => (cur === entry.uid ? null : entry.uid))
-                    }
                   >
                     <td className="py-2 pl-4 text-center font-bold text-slate-400">
                       {idx + 1}
@@ -216,10 +232,7 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
                       <div className="flex justify-end">
                         <div
                           onClick={(e) => e.stopPropagation()}
-                          className={cn(
-                            "flex-col items-end gap-1",
-                            expanded ? "flex" : "hidden group-hover:flex"
-                          )}
+                          className="flex flex-col items-end gap-1"
                         >
                           <StarRating
                             value={entry.myStars ?? 0}

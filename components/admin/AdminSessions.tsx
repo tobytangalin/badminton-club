@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { onSnapshot } from "firebase/firestore";
 import { Avatar } from "@/components/Avatar";
+import { cn } from "@/lib/cn";
+import { formatSessionDate, isSessionEnded } from "@/lib/date";
+import { getSavedLocations, persistSavedLocations } from "@/lib/locations";
 import {
   createSession,
   deleteSession,
@@ -19,12 +22,10 @@ interface SessionEntry {
   data: SessionDoc;
 }
 
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-
 interface FormState {
-  title: string;
-  day: string;
-  time: string;
+  date: string;
+  startTime: string;
+  endTime: string;
   location: string;
   capacity: string;
   cost: string;
@@ -32,11 +33,11 @@ interface FormState {
 }
 
 const emptyForm: FormState = {
-  title: "",
-  day: "Monday",
-  time: "19:00",
+  date: "",
+  startTime: "19:00",
+  endTime: "21:00",
   location: "",
-  capacity: "16",
+  capacity: "",
   cost: "",
   playersOverride: "",
 };
@@ -48,6 +49,12 @@ export function AdminSessions() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [savedLocations, setSavedLocations] = useState<string[]>([]);
+  const [showPast, setShowPast] = useState(false);
+
+  useEffect(() => {
+    void Promise.resolve(getSavedLocations()).then(setSavedLocations);
+  }, []);
 
   const subscribeSessions = useCallback(() => {
     const unsub = onSnapshot(sessionsRef(), (snap) => {
@@ -76,14 +83,28 @@ export function AdminSessions() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  function saveLocation() {
+    const loc = form.location.trim();
+    if (!loc || savedLocations.includes(loc)) return;
+    const next = [...savedLocations, loc];
+    persistSavedLocations(next);
+    setSavedLocations(next);
+  }
+
+  function removeLocation(loc: string) {
+    const next = savedLocations.filter((l) => l !== loc);
+    persistSavedLocations(next);
+    setSavedLocations(next);
+  }
+
   function startEdit(s: SessionEntry) {
     setEditingId(s.id);
     setForm({
-      title: s.data.title,
-      day: s.data.day,
-      time: s.data.time,
+      date: s.data.date,
+      startTime: s.data.startTime,
+      endTime: s.data.endTime,
       location: s.data.location,
-      capacity: String(s.data.capacity),
+      capacity: s.data.capacity ? String(s.data.capacity) : "",
       cost: s.data.cost ? String(s.data.cost) : "",
       playersOverride: s.data.playersOverride ? String(s.data.playersOverride) : "",
     });
@@ -99,13 +120,21 @@ export function AdminSessions() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    const capacity = parseInt(form.capacity, 10);
-    if (!form.title.trim() || !form.location.trim()) {
-      setError("Title and location are required.");
+    if (!form.date || !form.location.trim()) {
+      setError("Date and location are required.");
       return;
     }
-    if (!Number.isFinite(capacity) || capacity < 1) {
+    const capacity = form.capacity.trim() ? parseInt(form.capacity, 10) : null;
+    if (capacity !== null && (!Number.isFinite(capacity) || capacity < 1)) {
       setError("Capacity must be at least 1.");
+      return;
+    }
+    if (!form.startTime || !form.endTime) {
+      setError("Start and end time are required.");
+      return;
+    }
+    if (form.endTime <= form.startTime) {
+      setError("End time must be after the start time.");
       return;
     }
     const cost = parseFloat(form.cost);
@@ -120,9 +149,9 @@ export function AdminSessions() {
     setError("");
     try {
       const payload: Omit<SessionDoc, "count" | "createdAt"> = {
-        title: form.title.trim(),
-        day: form.day,
-        time: form.time,
+        date: form.date,
+        startTime: form.startTime,
+        endTime: form.endTime,
         location: form.location.trim(),
         capacity,
         cost: Number.isFinite(cost) && cost > 0 ? cost : null,
@@ -163,6 +192,72 @@ export function AdminSessions() {
     }
   }
 
+  function renderSession(s: SessionEntry) {
+    return (
+      <li key={s.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="font-bold">
+              {s.data.location} - {formatSessionDate(s.data.date)}
+            </p>
+            <p className="text-sm text-slate-600">{s.data.startTime}–{s.data.endTime}</p>
+            <p className="text-sm text-slate-500">
+              {registrations[s.id]?.length ?? 0}
+              {typeof s.data.capacity === "number" ? `/${s.data.capacity}` : ""} signed up
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => startEdit(s)}
+              className="rounded-lg border border-slate-300 px-3 py-1 text-sm font-medium hover:bg-slate-50"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => remove(s.id)}
+              className="rounded-lg border border-red-200 px-3 py-1 text-sm font-medium text-red-600 hover:bg-red-50"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+
+        {(registrations[s.id] ?? []).length > 0 && (
+          <ul className="mt-3 space-y-1">
+            {(registrations[s.id] ?? []).map((r) => (
+              <li key={r.uid} className="flex items-center gap-2 text-sm">
+                <Avatar src={r.photoUrl} name={r.nickname} size="sm" />
+                <span className="flex-1">{r.nickname}</span>
+                <button
+                  type="button"
+                  onClick={() => removeUser(s.id, r.uid)}
+                  className="text-xs font-medium text-red-600 hover:underline"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </li>
+    );
+  }
+
+  const upcoming = (sessions ?? [])
+    .filter((s) => !isSessionEnded(s.data))
+    .sort((a, b) => {
+      const c = a.data.date.localeCompare(b.data.date);
+      return c !== 0 ? c : a.data.startTime.localeCompare(b.data.startTime);
+    });
+  const past = (sessions ?? [])
+    .filter((s) => isSessionEnded(s.data))
+    .sort((a, b) => {
+      const c = b.data.date.localeCompare(a.data.date);
+      return c !== 0 ? c : b.data.startTime.localeCompare(a.data.startTime);
+    });
+
   return (
     <div className="space-y-6">
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -172,45 +267,87 @@ export function AdminSessions() {
         className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
       >
         <h2 className="font-bold">{editingId ? "Edit session" : "Add session"}</h2>
-        <input
-          type="text"
-          value={form.title}
-          onChange={(e) => set("title", e.target.value)}
-          placeholder="Title (e.g. Social Night)"
-          className="w-full rounded-xl border border-slate-300 px-3 py-2"
-        />
+        <label className="block text-sm font-medium">
+          Date
+          <input
+            type="date"
+            value={form.date}
+            onChange={(e) => set("date", e.target.value)}
+            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+          />
+        </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="text-sm font-medium">
-            Day
-            <select
-              value={form.day}
-              onChange={(e) => set("day", e.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
-            >
-              {DAYS.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-medium">
-            Time
+            From
             <input
               type="time"
-              value={form.time}
-              onChange={(e) => set("time", e.target.value)}
+              value={form.startTime}
+              onChange={(e) => set("startTime", e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+            />
+          </label>
+          <label className="text-sm font-medium">
+            To
+            <input
+              type="time"
+              value={form.endTime}
+              onChange={(e) => set("endTime", e.target.value)}
               className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
             />
           </label>
         </div>
-        <input
-          type="text"
-          value={form.location}
-          onChange={(e) => set("location", e.target.value)}
-          placeholder="Location (e.g. City Sports Hall, Court 2)"
-          className="w-full rounded-xl border border-slate-300 px-3 py-2"
-        />
+        <label className="block text-sm font-medium">
+          Location
+          <div className="mt-1 flex gap-2">
+            <input
+              type="text"
+              value={form.location}
+              onChange={(e) => set("location", e.target.value)}
+              placeholder="e.g. City Sports Hall, Court 2"
+              list="saved-locations"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2"
+            />
+            <button
+              type="button"
+              onClick={saveLocation}
+              disabled={!form.location.trim()}
+              className="shrink-0 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+          <datalist id="saved-locations">
+            {savedLocations.map((loc) => (
+              <option key={loc} value={loc} />
+            ))}
+          </datalist>
+          {savedLocations.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {savedLocations.map((loc) => (
+                <span
+                  key={loc}
+                  className="flex items-center overflow-hidden rounded-full border border-slate-300 bg-slate-50"
+                >
+                  <button
+                    type="button"
+                    onClick={() => set("location", loc)}
+                    className="py-1 pl-2.5 pr-1 text-xs text-slate-600 hover:bg-slate-100"
+                  >
+                    {loc}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeLocation(loc)}
+                    aria-label={`Remove ${loc}`}
+                    className="py-1 pr-2 text-xs text-slate-400 hover:text-red-500"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </label>
         <label className="block text-sm font-medium">
           Capacity
           <input
@@ -218,38 +355,43 @@ export function AdminSessions() {
             min={1}
             value={form.capacity}
             onChange={(e) => set("capacity", e.target.value)}
+            placeholder="Leave empty = no limit"
             className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
           />
         </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="text-sm font-medium">
-            Total cost
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={form.cost}
-              onChange={(e) => set("cost", e.target.value)}
-              placeholder="e.g. 36 (leave empty = free)"
-              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
-            />
-          </label>
-          <label className="text-sm font-medium">
-            Players that played
-            <input
-              type="number"
-              min={1}
-              value={form.playersOverride}
-              onChange={(e) => set("playersOverride", e.target.value)}
-              placeholder="Optional"
-              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
-            />
-          </label>
-        </div>
-        <p className="text-xs text-slate-500">
-          Each player pays <span className="font-semibold">total ÷ players that played</span>.
-          Leave the players field empty to use the number of registered players.
-        </p>
+        {editingId && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-sm font-medium">
+                Total cost
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={form.cost}
+                  onChange={(e) => set("cost", e.target.value)}
+                  placeholder="e.g. 36 (leave empty = free)"
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+                />
+              </label>
+              <label className="text-sm font-medium">
+                How many joined
+                <input
+                  type="number"
+                  min={1}
+                  value={form.playersOverride}
+                  onChange={(e) => set("playersOverride", e.target.value)}
+                  placeholder="Optional"
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+                />
+              </label>
+            </div>
+            <p className="text-xs text-slate-500">
+              Each player pays <span className="font-semibold">total ÷ players that played</span>.
+              Leave the players field empty to use the number of registered players.
+            </p>
+          </>
+        )}
         <div className="flex gap-2">
           <button
             type="submit"
@@ -279,63 +421,43 @@ export function AdminSessions() {
             No sessions yet. Add your first one above.
           </p>
         ) : (
-          <ul className="space-y-3">
-            {sessions.map((s) => (
-              <li
-                key={s.id}
-                className="rounded-2xl border border-slate-200 bg-white p-4"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-bold">{s.data.title}</p>
-                    <p className="text-sm text-slate-600">
-                      {s.data.day} · {s.data.time} · {s.data.location}
-                    </p>
-                    <p className="text-sm text-slate-500">
-                      {registrations[s.id]?.length ?? 0}/{s.data.capacity} signed up
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(s)}
-                      className="rounded-lg border border-slate-300 px-3 py-1 text-sm font-medium hover:bg-slate-50"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => remove(s.id)}
-                      className="rounded-lg border border-red-200 px-3 py-1 text-sm font-medium text-red-600 hover:bg-red-50"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
+          <div className="space-y-6">
+            <section>
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
+                Upcoming ({upcoming.length})
+              </h3>
+              {upcoming.length === 0 ? (
+                <p className="text-sm text-slate-500">No upcoming sessions.</p>
+              ) : (
+                <ul className="space-y-3">{upcoming.map(renderSession)}</ul>
+              )}
+            </section>
 
-                {(registrations[s.id] ?? []).length > 0 && (
-                  <ul className="mt-3 space-y-1">
-                    {(registrations[s.id] ?? []).map((r) => (
-                      <li
-                        key={r.uid}
-                        className="flex items-center gap-2 text-sm"
-                      >
-                        <Avatar src={r.photoUrl} name={r.nickname} size="sm" />
-                        <span className="flex-1">{r.nickname}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeUser(s.id, r.uid)}
-                          className="text-xs font-medium text-red-600 hover:underline"
-                        >
-                          Remove
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+            {past.length > 0 && (
+              <section>
+                <button
+                  type="button"
+                  onClick={() => setShowPast((v) => !v)}
+                  className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                >
+                  <span className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+                    Past sessions ({past.length})
+                  </span>
+                  <span
+                    className={cn(
+                      "text-slate-400 transition-transform",
+                      showPast && "rotate-180"
+                    )}
+                  >
+                    ▾
+                  </span>
+                </button>
+                {showPast && (
+                  <ul className="mt-3 space-y-3">{past.map(renderSession)}</ul>
                 )}
-              </li>
-            ))}
-          </ul>
+              </section>
+            )}
+          </div>
         )}
       </div>
     </div>

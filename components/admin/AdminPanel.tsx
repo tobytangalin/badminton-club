@@ -8,14 +8,14 @@ import { cn } from "@/lib/cn";
 type Tab = "users" | "sessions";
 
 export function AdminPanel({ uid }: { uid: string }) {
-  const [tab, setTab] = useState<Tab>("users");
+  const [tab, setTab] = useState<Tab>("sessions");
 
   return (
     <section>
       <h1 className="mb-4 text-2xl font-bold">Admin</h1>
 
       <div className="mb-5 grid grid-cols-2 rounded-xl bg-slate-200 p-1 text-sm font-medium">
-        {(["users", "sessions"] as const).map((t) => (
+        {(["sessions", "users"] as const).map((t) => (
           <button
             key={t}
             type="button"

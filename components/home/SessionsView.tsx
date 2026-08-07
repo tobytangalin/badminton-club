@@ -6,6 +6,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { SessionCard } from "@/components/home/SessionCard";
 import { Spinner } from "@/components/Spinner";
 import { useWhenVisible } from "@/lib/useWhenVisible";
+import { isSessionEnded } from "@/lib/date";
 import { sessionsRef, registrationsRef } from "@/lib/db";
 import type { Registration, SessionDoc } from "@/lib/types";
 
@@ -82,35 +83,39 @@ export function SessionsView() {
 
   if (!sessions) return <Spinner />;
 
+  const upcoming = sessions
+    .filter((s) => !isSessionEnded(s.data))
+    .sort((a, b) => {
+      const dateCmp = a.data.date.localeCompare(b.data.date);
+      return dateCmp !== 0 ? dateCmp : a.data.startTime.localeCompare(b.data.startTime);
+    });
+
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-xl font-bold">Upcoming sessions</h2>
-        <span className="text-sm text-slate-500">{sessions.length} found</span>
+        <span className="text-sm text-slate-500">{upcoming.length} found</span>
       </div>
 
-      {sessions.length === 0 ? (
+      {upcoming.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500">
           No sessions scheduled yet. Check back soon!
         </p>
       ) : (
         <ul className="space-y-4">
-          {sessions
-            .slice()
-            .sort((a, b) => a.data.day.localeCompare(b.data.day))
-            .map((s) => (
-              <li key={s.id}>
-                <SessionCard
-                  sessionId={s.id}
-                  session={s.data}
-                  registrations={registrations[s.id] ?? []}
-                  currentUid={user?.uid ?? ""}
-                  currentNickname={userData?.nickname ?? ""}
-                  currentPhotoUrl={userData?.photoUrl}
-                  needsProfile={!userData?.nickname}
-                />
-              </li>
-            ))}
+          {upcoming.map((s) => (
+            <li key={s.id}>
+              <SessionCard
+                sessionId={s.id}
+                session={s.data}
+                registrations={registrations[s.id] ?? []}
+                currentUid={user?.uid ?? ""}
+                currentNickname={userData?.nickname ?? ""}
+                currentPhotoUrl={userData?.photoUrl}
+                needsProfile={!userData?.nickname}
+              />
+            </li>
+          ))}
         </ul>
       )}
     </section>

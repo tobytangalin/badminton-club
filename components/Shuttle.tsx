@@ -9,10 +9,10 @@ export function Shuttle({
 }) {
   return (
     <span
-      className={cn("inline-block", !filled && "opacity-30 grayscale")}
+      className={cn("inline-block", !filled && "opacity-0")}
       aria-hidden
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- tiny local icon */}
       <img
         src="/shuttlecock.png"
         alt=""
@@ -42,7 +42,7 @@ export function FractionalShuttle({
       style={{ width: size / 2, height: size }}
       aria-hidden
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- tiny local icon */}
       <img
         src="/shuttlecock.png"
         alt=""

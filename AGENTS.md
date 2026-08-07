@@ -37,21 +37,34 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
 - **Auth**: Firebase Auth (Google SSO + email/password). `components/AuthProvider.tsx`
   exposes `user`, `userData`, `loading`, `isAdmin`, `needsProfile`.
 - **Most data ops are CLIENT-SIDE** with enforcement in `firestore.rules`
-  (roles, capacity, ratings). Only `app/api/bootstrap` and the optional admin API
-  routes use `firebase-admin` (requires a service account; optional).
+  (roles, capacity, ratings). Only `app/api/bootstrap`, the optional admin API
+  routes, and `app/api/admin/users/[uid]` (DELETE — deletes an auth account +
+  Firestore data; used for both admin-deletes-user and member-deletes-self)
+  use `firebase-admin` (requires a service account; optional). Admins delete
+  users from `AdminUsers`; members delete themselves from `ProfileCard`
+  (Edit → "Delete account" → type their nickname to confirm).
 - **Lazy SDK init**: `lib/firebase.ts` never initializes at module top-level; call
   `getFirebaseApp()`/`getDb()` inside hooks/handlers so `next build` prerendering works.
 - **Firestore collections** (`lib/types.ts`):
   - `users/{uid}` — `nickname`, `photoUrl`, `role` (`member`|`admin`), `email`
-  - `sessions/{id}` — `title`, `day`, `time`, `location`, `capacity`, `count`,
-    `cost` (total, optional), `playersOverride` (optional, overrides player count
-    for cost splitting); `sessions/{id}/registrations/{uid}` subcollection
+  - `sessions/{id}` — `date` (ISO `YYYY-MM-DD`), `startTime`, `endTime`,
+    `location`, `capacity` (optional; null/absent = no limit), `count`, `cost`
+    (total, optional), `playersOverride` (optional, overrides player count for
+    cost splitting); `sessions/{id}/registrations/{uid}` subcollection
   - `ratings/{ratedUid}_{raterUid}` — `stars` 1–5
   - `sessions/{id}/matches/{matchId}` — reserved for future match results
 - **Registration** uses a client `runTransaction` (write registration + `increment`
   session `count`) with rules checking capacity.
 - **Costs**: `lib/payments.ts` — `perPlayerCost = cost / (playersOverride ?? count)`;
   currency is `NEXT_PUBLIC_CURRENCY` (default `DKK`).
+- **Dates**: sessions store ISO `date` + 24h `startTime`/`endTime`.
+  `lib/date.ts` has `formatSessionDate` ("Sunday, August 9") and `isSessionEnded`
+  (Home hides ended sessions; Admin splits the list into Upcoming/Past).
+- **Admin sessions** (`AdminSessions`): the add form only shows date, from/to
+  times, location and capacity. `cost` and `playersOverride` ("how many joined")
+  appear only while editing (they can't be known until the session happens). The
+  list is split into Upcoming and a collapsible Past section; `AdminPanel`
+  defaults to the Sessions tab.
 
 ## Resource usage patterns (preserve these)
 
@@ -79,6 +92,9 @@ regress these:
   256px square WebP before `uploadBytes` — keeps a 200-member Members page load
   to a few MB. Google SSO photos are already tiny (`=s96-c`) and hosted on
   Google's CDN, so they're stored/used as-is.
+- **Saved admin locations** (`lib/locations.ts`): kept in the browser's
+  `localStorage` (no Firestore cost). The admin form offers tappable chips plus
+  native `datalist` autocomplete, and a Save button next to the location field.
 
 ## Routes & nav
 
@@ -92,7 +108,10 @@ regress these:
 - Feature-based folders under `components/` (`home/`, `members/`, `admin/`).
 - Shared small UI in `components/` root (`Avatar`, `StarRating`, `Spinner`...).
 - Use the `cn()` helper (`lib/cn.ts`) for conditional Tailwind classes.
-- Use `Avatar` for photos (never raw `<img>` without a good reason).
+- Use `Avatar` for photos. Raw `<img>` is allowed for already-optimized assets
+  (WebP from Firebase Storage, tiny local icons) — tag each with an
+  `eslint-disable-next-line @next/next/no-img-element` + reason so future
+  unoptimized images are still caught.
 - No comments unless they add real value; follow existing patterns.
 - Client components that gate on auth redirect with `router.replace` in a
   `useEffect`, never during render.

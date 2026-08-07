@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { registerForSession, unregisterFromSession } from "@/lib/db";
+import { formatSessionDate } from "@/lib/date";
 import { formatMoney, perPlayerCost } from "@/lib/payments";
 import type { Registration, SessionDoc } from "@/lib/types";
 import { cn } from "@/lib/cn";
@@ -30,8 +31,10 @@ export function SessionCard({
   const [error, setError] = useState("");
 
   const isRegistered = registrations.some((r) => r.uid === currentUid);
-  const slotsLeft = Math.max(0, session.capacity - session.count);
-  const isFull = session.count >= session.capacity;
+  const capacity = session.capacity;
+  const hasCapacity = typeof capacity === "number";
+  const isFull = hasCapacity && session.count >= capacity;
+  const slotsLeft = hasCapacity ? Math.max(0, capacity - session.count) : 0;
   const perPlayer = perPlayerCost(session);
 
   async function toggle() {
@@ -61,25 +64,29 @@ export function SessionCard({
     <article className="rounded-2xl border border-slate-200 bg-white p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">{session.title}</h3>
+          <h3 className="text-lg font-bold text-slate-900">
+            {session.location} - {formatSessionDate(session.date)}
+          </h3>
           <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-sm text-slate-600">
-            <span>🗓 {session.day}</span>
-            <span>🕖 {session.time}</span>
-            <span>📍 {session.location}</span>
+            <span>
+              🕖 {session.startTime}–{session.endTime}
+            </span>
           </p>
         </div>
-        <span
-          className={cn(
-            "rounded-full px-3 py-1 text-xs font-semibold",
-            isFull
-              ? "bg-red-100 text-red-700"
-              : slotsLeft <= 2
-                ? "bg-amber-100 text-amber-800"
-                : "bg-teal-50 text-teal-700"
-          )}
-        >
-          {isFull ? "Full" : `${slotsLeft} slot${slotsLeft === 1 ? "" : "s"} left`}
-        </span>
+        {hasCapacity && (
+          <span
+            className={cn(
+              "rounded-full px-3 py-1 text-xs font-semibold",
+              isFull
+                ? "bg-red-100 text-red-700"
+                : slotsLeft <= 2
+                  ? "bg-amber-100 text-amber-800"
+                  : "bg-teal-50 text-teal-700"
+            )}
+          >
+            {isFull ? "Full" : `${slotsLeft} slot${slotsLeft === 1 ? "" : "s"} left`}
+          </span>
+        )}
       </div>
 
       {perPlayer !== null && (
@@ -103,10 +110,11 @@ export function SessionCard({
 
       <div className="mt-4">
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
-          Signed up ({registrations.length}/{session.capacity})
+          Signed up ({registrations.length}
+          {hasCapacity ? `/${session.capacity}` : ""})
         </p>
         {registrations.length === 0 ? (
-          <p className="text-sm text-slate-500">No one signed up yet — be the first!</p>
+          <p className="text-sm text-slate-500">No one signed up yet. Be the first!</p>
         ) : (
           <ul className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {registrations.map((r) => (
