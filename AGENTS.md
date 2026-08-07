@@ -61,7 +61,7 @@ regress these:
 - **`lib/useWhenVisible.ts`** — wraps every `onSnapshot` so the subscription is
   torn down while the browser tab is hidden. Any new real-time listener must use
   it (pass a `useCallback`'d subscribe function; it resubscribes on visibility).
-- **Leaderboard** (`RankingClient` + `fetchLeaderboard`): data is cached 60s per
+- **Leaderboard** (`MembersClient` + `fetchLeaderboard`): data is cached 60s per
   rater in `lib/db.ts` (`LEADERBOARD_TTL_MS`). Rating a player recomputes that
   row locally (`applyRating`) and calls `invalidateLeaderboardCache()` — there is
   **no refetch after rating and no polling** (polling would blow the read budget).
@@ -73,7 +73,7 @@ regress these:
 
 ## Code style
 
-- Feature-based folders under `components/` (`home/`, `ranking/`, `admin/`).
+- Feature-based folders under `components/` (`home/`, `members/`, `admin/`).
 - Shared small UI in `components/` root (`Avatar`, `StarRating`, `Spinner`...).
 - Use the `cn()` helper (`lib/cn.ts`) for conditional Tailwind classes.
 - Use `Avatar` for photos (never raw `<img>` without a good reason).

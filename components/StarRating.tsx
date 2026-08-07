@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/cn";
+import { Shuttle } from "@/components/Shuttle";
 
 interface StarRatingProps {
   value: number;
@@ -15,6 +16,12 @@ const sizes = {
   sm: "text-sm",
   md: "text-xl",
   lg: "text-2xl",
+};
+
+const iconSize = {
+  sm: 14,
+  md: 20,
+  lg: 24,
 };
 
 export function StarRating({
@@ -49,12 +56,7 @@ export function StarRating({
               onChange && !disabled ? "cursor-pointer hover:scale-110" : ""
             )}
           >
-            <span
-              className={filled ? "text-amber-400" : "text-slate-300"}
-              aria-hidden
-            >
-              ★
-            </span>
+            <Shuttle size={iconSize[size]} filled={filled} />
           </button>
         );
       })}

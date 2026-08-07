@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Badminton Club",
-    short_name: "Club",
-    description: "Badminton club sessions, sign-ups and player rankings.",
+    name: "Social & Badminton Club",
+    short_name: "Badminton Club",
+    description: "Social & Badminton Club sessions, sign-ups and player rankings.",
     start_url: "/",
     display: "standalone",
     background_color: "#f8fafc",

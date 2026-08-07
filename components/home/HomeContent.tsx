@@ -67,8 +67,8 @@ function PublicLanding() {
             body: "See who's coming, how many slots are left, and grab your spot.",
           },
           {
-            title: "Skill rankings",
-            body: "Rate players 1–5 stars and see how the club ranks itself.",
+            title: "Power level",
+            body: "Rate players 1–5 shuttles and see the club's ranking.",
           },
           {
             title: "All levels",

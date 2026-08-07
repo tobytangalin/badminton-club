@@ -32,7 +32,7 @@ Cloud SQL (no always-free tier) — this app is NoSQL end-to-end.
 app/
   page.tsx                  Home (public / signed-in)
   login/page.tsx            Google SSO + email/password
-  ranking/page.tsx          Ranked leaderboard
+  members/page.tsx          Members / ranked leaderboard
   admin/page.tsx            Admin panel
   manifest.ts               PWA manifest
   api/
@@ -41,7 +41,7 @@ app/
 components/
   AuthProvider.tsx          Auth + user profile state
   home/ ...                 Profile card, session list/card
-  ranking/RankingClient.tsx
+  members/MembersClient.tsx
   admin/AdminUsers|AdminSessions.tsx
 lib/
   firebase.ts               Client SDK (lazy init)

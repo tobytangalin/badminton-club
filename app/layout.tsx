@@ -5,11 +5,11 @@ import { Nav } from "@/components/Nav";
 import { SWRegister } from "@/components/SWRegister";
 
 export const metadata: Metadata = {
-  title: "Badminton Club",
-  description: "Badminton club management — sessions, rankings and more.",
+  title: "Social & Badminton Club",
+  description: "Social & Badminton Club management — sessions, rankings and more.",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/icon.svg" },
-  appleWebApp: { capable: true, title: "Badminton Club", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Social & Badminton Club", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

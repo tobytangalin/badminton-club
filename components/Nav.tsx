@@ -8,7 +8,7 @@ import { cn } from "@/lib/cn";
 
 const primaryLinks = [
   { href: "/", label: "Home", icon: "🏠" },
-  { href: "/ranking", label: "Ranking", icon: "🏆" },
+  { href: "/members", label: "Members", icon: "🏆" },
 ];
 
 export function Nav() {
@@ -35,7 +35,7 @@ export function Nav() {
             <span className="grid size-8 place-items-center rounded-lg bg-teal-600 text-white">
               🏸
             </span>
-            <span className="hidden sm:inline">Badminton Club</span>
+            <span className="hidden sm:inline">Social &amp; Badminton Club</span>
           </Link>
 
           <nav className="flex items-center gap-1">

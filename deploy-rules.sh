@@ -8,4 +8,4 @@
 #   ./deploy-rules.sh --project <project-id>
 set -euo pipefail
 
-npx --yes firebase-tools deploy --only firestore:rules,storage --project "$@"
+npx --yes firebase-tools deploy --only firestore:rules,storage "$@"

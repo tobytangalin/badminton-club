@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { Spinner } from "@/components/Spinner";
 import { SetupNotice } from "@/components/SetupNotice";
-import { RankingClient } from "@/components/ranking/RankingClient";
+import { MembersClient } from "@/components/members/MembersClient";
 
-export default function RankingPage() {
+export default function MembersPage() {
   const { user, loading, configured } = useAuth();
   const router = useRouter();
 
@@ -26,5 +26,5 @@ export default function RankingPage() {
 
   if (loading || !user) return <Spinner />;
 
-  return <RankingClient currentUid={user.uid} />;
+  return <MembersClient currentUid={user.uid} />;
 }

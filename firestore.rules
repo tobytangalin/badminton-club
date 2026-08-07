@@ -61,11 +61,11 @@ service cloud.firestore {
     // Ratings ----------------------------------------------------------
     // A rating doc id is `${ratedUid}_${raterUid}` so each player can be
     // rated at most once by each other player (re-rating overwrites).
+    // Members may also rate themselves.
     match /ratings/{id} {
       allow read: if signedIn();
       allow create: if signedIn()
         && request.resource.data.raterUid == request.auth.uid
-        && request.resource.data.ratedUid != request.auth.uid
         && validStars(request.resource.data.stars);
       allow update: if signedIn()
         && resource.data.raterUid == request.auth.uid
