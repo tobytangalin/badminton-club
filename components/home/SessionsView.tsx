@@ -6,7 +6,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { SessionCard } from "@/components/home/SessionCard";
 import { Spinner } from "@/components/Spinner";
 import { useWhenVisible } from "@/lib/useWhenVisible";
-import { isSessionEnded } from "@/lib/date";
+import { isSessionEnded, normalizeSession } from "@/lib/date";
 import { sessionsRef, registrationsRef } from "@/lib/db";
 import type { Registration, SessionDoc } from "@/lib/types";
 
@@ -43,7 +43,7 @@ export function SessionsView() {
       (snap) => {
         const next = snap.docs.map((d) => ({
           id: d.id,
-          data: d.data() as SessionDoc,
+          data: normalizeSession(d.data() as SessionDoc),
         }));
         setSessions(next);
 
@@ -86,8 +86,8 @@ export function SessionsView() {
   const upcoming = sessions
     .filter((s) => !isSessionEnded(s.data))
     .sort((a, b) => {
-      const dateCmp = a.data.date.localeCompare(b.data.date);
-      return dateCmp !== 0 ? dateCmp : a.data.startTime.localeCompare(b.data.startTime);
+      const dateCmp = (a.data.date ?? "").localeCompare(b.data.date ?? "");
+      return dateCmp !== 0 ? dateCmp : (a.data.startTime ?? "").localeCompare(b.data.startTime ?? "");
     });
 
   return (

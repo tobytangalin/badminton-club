@@ -1,3 +1,37 @@
+import type { SessionDoc } from "@/lib/types";
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function addHours(hhmm: string, hours: number): string {
+  const [h, m] = hhmm.split(":").map((n) => parseInt(n, 10));
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return hhmm;
+  const total = (h + hours) * 60 + m;
+  return `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function legacySessionDate(day: string): string {
+  const idx = WEEKDAYS.indexOf(day);
+  if (idx < 0) return "2000-01-01";
+  const today = new Date();
+  const d = new Date(today);
+  d.setDate(d.getDate() + ((idx - today.getDay() + 7) % 7) - 7);
+  return toISODate(d);
+}
+
+/**
+ * Sessions created before the ISO-date schema stored a weekday name in `day`
+ * and `time` instead of `date`/`startTime`/`endTime`. Map them onto the new
+ * fields so legacy docs render, sort, and classify without crashing.
+ */
+export function normalizeSession(
+  data: SessionDoc & { day?: string; time?: string }
+): SessionDoc {
+  const startTime = data.startTime ?? data.time ?? "00:00";
+  const endTime = data.endTime ?? addHours(startTime, 2);
+  const date = data.date && data.date.length > 0 ? data.date : legacySessionDate(data.day ?? "");
+  return { ...data, date, startTime, endTime };
+}
+
 /** Format an ISO `YYYY-MM-DD` date for display, e.g. "Sunday, August 9". */
 export function formatSessionDate(date: string): string {
   const d = new Date(`${date}T00:00:00`);

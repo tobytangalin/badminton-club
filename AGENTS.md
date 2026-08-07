@@ -60,6 +60,9 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
 - **Dates**: sessions store ISO `date` + 24h `startTime`/`endTime`.
   `lib/date.ts` has `formatSessionDate` ("Sunday, August 9") and `isSessionEnded`
   (Home hides ended sessions; Admin splits the list into Upcoming/Past).
+  `normalizeSession` maps **legacy session docs** (old `title`/`day`/`time`
+  schema) onto the new fields — always normalize when mapping session snapshots,
+  or `date.localeCompare` crashes on undefined.
 - **Admin sessions** (`AdminSessions`): the add form only shows date, from/to
   times, location and capacity. `cost` and `playersOverride` ("how many joined")
   appear only while editing (they can't be known until the session happens). The
@@ -95,6 +98,13 @@ regress these:
 - **Saved admin locations** (`lib/locations.ts`): kept in the browser's
   `localStorage` (no Firestore cost). The admin form offers tappable chips plus
   native `datalist` autocomplete, and a Save button next to the location field.
+- **Service worker** (`public/sw.js`, PWA): navigations are **network-first** so a
+  fresh deploy's HTML always wins (caching HTML stale-first served old chunk names
+  after redeploys, causing 404s). Only `_next/static/*` is cache-first — those
+  files are content-hashed and immutable. Call `response.clone()` synchronously
+  when the fetch resolves, never after `caches.open()` resolves (the body is
+  already consumed). Bump `CACHE_NAME` when changing caching behavior so the old
+  cache is purged on activate.
 
 ## Routes & nav
 

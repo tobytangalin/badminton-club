@@ -1,4 +1,4 @@
-const CACHE_NAME = "badminton-club-v1";
+const CACHE_NAME = "badminton-club-v2";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
@@ -20,16 +20,32 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   if (!request.url.startsWith(self.location.origin)) return;
 
+  if (request.url.includes("/_next/static/")) {
+    event.respondWith(
+      caches.match(request).then(
+        (cached) =>
+          cached ||
+          fetch(request).then((response) => {
+            if (response.ok) {
+              const copy = response.clone();
+              caches.open(CACHE_NAME).then((c) => c.put(request, copy));
+            }
+            return response;
+          })
+      )
+    );
+    return;
+  }
+
   event.respondWith(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      const cached = await cache.match(request, { ignoreSearch: true });
-      const fetchPromise = fetch(request)
-        .then((response) => {
-          if (response.ok) cache.put(request, response.clone());
-          return response;
-        })
-        .catch(() => cached);
-      return cached || fetchPromise;
-    })
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request))
   );
 });

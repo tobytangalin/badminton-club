@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { onSnapshot } from "firebase/firestore";
 import { Avatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
-import { formatSessionDate, isSessionEnded } from "@/lib/date";
+import { formatSessionDate, isSessionEnded, normalizeSession } from "@/lib/date";
 import { getSavedLocations, persistSavedLocations } from "@/lib/locations";
 import {
   createSession,
@@ -58,7 +58,7 @@ export function AdminSessions() {
 
   const subscribeSessions = useCallback(() => {
     const unsub = onSnapshot(sessionsRef(), (snap) => {
-      setSessions(snap.docs.map((d) => ({ id: d.id, data: d.data() as SessionDoc })));
+      setSessions(snap.docs.map((d) => ({ id: d.id, data: normalizeSession(d.data() as SessionDoc) })));
     });
     return unsub;
   }, []);
@@ -248,14 +248,14 @@ export function AdminSessions() {
   const upcoming = (sessions ?? [])
     .filter((s) => !isSessionEnded(s.data))
     .sort((a, b) => {
-      const c = a.data.date.localeCompare(b.data.date);
-      return c !== 0 ? c : a.data.startTime.localeCompare(b.data.startTime);
+      const c = (a.data.date ?? "").localeCompare(b.data.date ?? "");
+      return c !== 0 ? c : (a.data.startTime ?? "").localeCompare(b.data.startTime ?? "");
     });
   const past = (sessions ?? [])
     .filter((s) => isSessionEnded(s.data))
     .sort((a, b) => {
-      const c = b.data.date.localeCompare(a.data.date);
-      return c !== 0 ? c : b.data.startTime.localeCompare(a.data.startTime);
+      const c = (b.data.date ?? "").localeCompare(a.data.date ?? "");
+      return c !== 0 ? c : (b.data.startTime ?? "").localeCompare(a.data.startTime ?? "");
     });
 
   return (
