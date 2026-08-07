@@ -70,6 +70,22 @@ regress these:
   changes (tracked via `countsRef`). Avoid adding a per-session listener loop.
 - Reads/writes are already batched and denormalized (registration embeds
   nickname/photoUrl so users aren't re-read on Home).
+- **Public images** (homepage hero, logo, committee photos) live in Firebase
+  Storage under `landing/` and `committee/` (public read in `storage.rules`) and
+  are served as WebP with `Cache-Control: public, max-age=31536000, immutable`.
+  Optimize any new image this way (resize to needed size, WebP) and never hotlink
+  Google Sites `lh3.googleusercontent.com` URLs (they 403).
+- **Avatar uploads** (`lib/image.ts` + `ProfileCard`): resized client-side to a
+  256px square WebP before `uploadBytes` — keeps a 200-member Members page load
+  to a few MB. Google SSO photos are already tiny (`=s96-c`) and hosted on
+  Google's CDN, so they're stored/used as-is.
+
+## Routes & nav
+
+- Public pages: `/` (home), `/committee`. Signed-in only: `/members`, `/admin`.
+  `components/Nav.tsx` shows Members/Admin links only when signed in
+  (`primaryLinks` for members+admins, `memberLinks` for guests, Admin appended
+  for admins); the mobile bottom bar renders only for signed-in users.
 
 ## Code style
 

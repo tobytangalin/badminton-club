@@ -34,62 +34,69 @@ function PublicLanding() {
   return (
     <div className="space-y-8 py-8">
       <section className="text-center">
-        <span className="text-6xl" aria-hidden>
-          🏸
-        </span>
-        <h1 className="mt-4 text-3xl font-extrabold text-slate-900 sm:text-4xl">
-          Social Badminton Club
+        <h1 className="text-3xl font-extrabold text-slate-900 sm:text-4xl">
+          Social &amp; Badminton Club
         </h1>
-        <p className="mx-auto mt-3 max-w-md text-slate-600">
-          Weekly social badminton sessions, friendly skill rankings and a great group of
-          players. Join us for fun games for all levels.
+        <p className="mx-auto mt-3 text-slate-600">
+          Are you looking for a place to play badminton? You&apos;ve come to the
+          right place!
         </p>
-        <div className="mt-6 flex justify-center gap-3">
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <img
+          src="https://firebasestorage.googleapis.com/v0/b/social-badminton.firebasestorage.app/o/landing%2Fhero.webp?alt=media"
+          alt="Badminton players at Social &amp; Badminton Club"
+          className="h-auto w-full"
+        />
+      </section>
+
+      <section className="space-y-4 text-slate-700">
+        <p>
+          At our club we welcome everyone — whether you&apos;re a total beginner
+          or an experienced player. Our focus is on creating a relaxed,
+          inclusive environment where people of all skill levels can enjoy the
+          game, meet new people, and have a great time on and off the court.
+        </p>
+        <p>
+          We play every Sunday, usually at DGI Byen in Copenhagen (unless the
+          court is unavailable). Just check our sessions page to see upcoming
+          sessions and register your spot.
+        </p>
+        <p>
+          No racket? No problem! You&apos;re welcome to come without one — many
+          players are happy to share, and we provide shuttlecocks for all
+          games.
+        </p>
+        <p>
+          We simply split the court fee equally among all players, based on the
+          number of hours played, so everyone just pays their fair share.
+        </p>
+        <p>
+          After playing, we occasionally go out for dinner together — a great
+          way to unwind, chat, and connect with fellow players in a casual
+          setting.
+        </p>
+        <p>
+          So whether you&apos;re here to improve your skills, stay active, or
+          just enjoy a friendly match, you&apos;ll find a warm and welcoming
+          community that shares your love for badminton.
+        </p>
+      </section>
+
+      <section className="rounded-2xl bg-teal-50 p-6 text-center">
+        <h2 className="text-lg font-semibold text-teal-900">Come join us</h2>
+        <p className="mt-1 text-sm text-teal-800">
+          We can&apos;t wait to meet you!
+        </p>
+        <div className="mt-5 flex justify-center">
           <Link
             href="/login?mode=signup"
             className="rounded-xl bg-teal-600 px-6 py-3 font-medium text-white hover:bg-teal-700"
           >
             Sign up
           </Link>
-          <Link
-            href="/login"
-            className="rounded-xl border border-slate-300 bg-white px-6 py-3 font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Sign in
-          </Link>
         </div>
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-3">
-        {[
-          {
-            title: "Book sessions",
-            body: "See who's coming, how many slots are left, and grab your spot.",
-          },
-          {
-            title: "Power level",
-            body: "Rate players 1–5 shuttles and see the club's ranking.",
-          },
-          {
-            title: "All levels",
-            body: "Casual social games for every standard, from beginner to pro.",
-          },
-        ].map((f) => (
-          <div
-            key={f.title}
-            className="rounded-2xl border border-slate-200 bg-white p-5"
-          >
-            <h2 className="font-semibold text-slate-900">{f.title}</h2>
-            <p className="mt-1 text-sm text-slate-600">{f.body}</p>
-          </div>
-        ))}
-      </section>
-
-      <section className="rounded-2xl bg-teal-50 p-6 text-center">
-        <h2 className="text-lg font-semibold text-teal-900">Where to find us</h2>
-        <p className="mt-1 text-sm text-teal-800">
-          Sessions and locations are shown to members after you sign in.
-        </p>
       </section>
     </div>
   );

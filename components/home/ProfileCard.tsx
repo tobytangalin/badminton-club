@@ -4,6 +4,7 @@ import { useRef, useState, type ChangeEvent } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { Avatar } from "@/components/Avatar";
 import { uploadProfilePhoto, updateUserProfile } from "@/lib/db";
+import { resizeAvatar } from "@/lib/image";
 import { cn } from "@/lib/cn";
 
 export function ProfileCard() {
@@ -23,6 +24,10 @@ export function ProfileCard() {
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file.");
+      return;
+    }
     if (file.size > 5 * 1024 * 1024) {
       setError("Photo must be under 5 MB.");
       return;
@@ -31,7 +36,8 @@ export function ProfileCard() {
     setPhoto(URL.createObjectURL(file));
     setUploading(true);
     try {
-      const url = await uploadProfilePhoto(file, uid);
+      const resized = await resizeAvatar(file);
+      const url = await uploadProfilePhoto(resized, uid);
       setPhoto(url);
     } catch (err) {
       console.error(err);

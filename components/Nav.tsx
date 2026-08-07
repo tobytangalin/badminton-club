@@ -9,6 +9,12 @@ import { cn } from "@/lib/cn";
 const primaryLinks = [
   { href: "/", label: "Home", icon: "🏠" },
   { href: "/members", label: "Members", icon: "🏆" },
+  { href: "/committee", label: "Committee", icon: "👥" },
+];
+
+const memberLinks = [
+  { href: "/", label: "Home", icon: "🏠" },
+  { href: "/committee", label: "Committee", icon: "👥" },
 ];
 
 export function Nav() {
@@ -20,7 +26,9 @@ export function Nav() {
 
   const links = isAdmin
     ? [...primaryLinks, { href: "/admin", label: "Admin", icon: "⚙️" }]
-    : primaryLinks;
+    : user
+      ? primaryLinks
+      : memberLinks;
 
   async function handleSignOut() {
     await signOut();
@@ -32,9 +40,11 @@ export function Nav() {
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-4">
           <Link href="/" className="flex items-center gap-2 font-bold text-slate-900">
-            <span className="grid size-8 place-items-center rounded-lg bg-teal-600 text-white">
-              🏸
-            </span>
+            <img
+              src="https://firebasestorage.googleapis.com/v0/b/social-badminton.firebasestorage.app/o/landing%2Flogo.webp?alt=media"
+              alt="Social &amp; Badminton Club logo"
+              className="size-8 rounded-lg"
+            />
             <span className="hidden sm:inline">Social &amp; Badminton Club</span>
           </Link>
 
@@ -86,7 +96,7 @@ export function Nav() {
 
       {user && (
         <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
-          <div className="grid grid-cols-3">
+          <div className={cn("grid", isAdmin ? "grid-cols-4" : "grid-cols-3")}>
             {links.map((link) => {
               const active = pathname === link.href;
               return (

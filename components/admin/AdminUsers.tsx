@@ -82,7 +82,7 @@ export function AdminUsers({ currentUid }: { currentUid: string }) {
                   onClick={() => toggleRole(u.uid, u.data.role)}
                   className="rounded-lg border border-slate-300 px-3 py-1 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
                 >
-                  {isAdmin ? "Demote" : "Make admin"}
+                  {isAdmin ? "Remove admin role" : "Make admin"}
                 </button>
               )}
             </li>

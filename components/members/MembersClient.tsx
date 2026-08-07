@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { FractionalShuttle } from "@/components/Shuttle";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import { StarRating } from "@/components/StarRating";
 import { Spinner } from "@/components/Spinner";
 import { cn } from "@/lib/cn";
@@ -19,6 +20,7 @@ type SortDir = "asc" | "desc";
 
 function SortHeader({
   label,
+  info,
   sortBy,
   active,
   dir,
@@ -26,6 +28,7 @@ function SortHeader({
   className,
 }: {
   label: string;
+  info?: string;
   sortBy: SortKey;
   active: boolean;
   dir: SortDir;
@@ -35,14 +38,17 @@ function SortHeader({
   const arrow = !active ? "" : dir === "asc" ? " ↑" : " ↓";
   return (
     <th className={className}>
-      <button
-        type="button"
-        onClick={() => onToggle(sortBy)}
-        className="inline-flex items-center gap-0.5 tracking-wide text-slate-500 hover:text-teal-700"
-      >
-        {label}
-        <span className="text-[10px] leading-none">{arrow}</span>
-      </button>
+      <div className="inline-flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onToggle(sortBy)}
+          className="inline-flex items-center gap-0.5 tracking-wide text-slate-500 hover:text-teal-700"
+        >
+          {label}
+          <span className="text-[10px] leading-none">{arrow}</span>
+        </button>
+        {info && <InfoTooltip label={info} />}
+      </div>
     </th>
   );
 }
@@ -116,14 +122,6 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
   return (
     <section>
       <h1 className="text-2xl font-bold">Members</h1>
-      <p className="mt-1 text-xs text-slate-400">Skill levels refresh every minute.</p>
-
-      <p className="mb-4 mt-3 text-sm text-slate-500">
-        Power level is a player&apos;s badminton skill as rated by club members
-        (including themselves). Tap the shuttles to rate a player from 1 to 5 —
-        1 shuttle is for absolute beginners, 5 shuttles means the best players at
-        the club. Each player&apos;s Power level is the average of all ratings.
-      </p>
 
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
 
@@ -151,6 +149,7 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
                 />
                 <SortHeader
                   label="Power level"
+                  info="Power level is a player's badminton skill as rated by club members."
                   sortBy="power"
                   active={sortKey === "power"}
                   dir={sortDir}
@@ -158,7 +157,10 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
                   className="py-3 pr-3 text-left text-xs font-medium"
                 />
                 <th className="py-3 pr-4 text-right text-xs font-medium text-slate-400">
-                  My rating
+                  <div className="inline-flex items-center gap-1">
+                    My rating
+                    <InfoTooltip align="right" label="Tap to rate. 1 shuttle = beginner, 5 shuttles = our club's best players." />
+                  </div>
                 </th>
               </tr>
             </thead>

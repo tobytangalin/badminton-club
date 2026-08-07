@@ -71,9 +71,12 @@ export async function updateUserProfile(
   await updateDoc(userDoc(uid), data);
 }
 
-export async function uploadProfilePhoto(file: File, uid: string): Promise<string> {
+export async function uploadProfilePhoto(file: Blob, uid: string): Promise<string> {
   const ref = storageRef(getStorageClient(), `profile-pics/${uid}`);
-  await uploadBytes(ref, file, { contentType: file.type });
+  await uploadBytes(ref, file, {
+    contentType: "image/webp",
+    cacheControl: "public, max-age=31536000, immutable",
+  });
   return getDownloadURL(ref);
 }
 
