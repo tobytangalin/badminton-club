@@ -46,11 +46,19 @@ const emptyForm: FormState = {
 
 const PREVIEW_COUNT = 8;
 
+function todayString() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function AdminSessions() {
   const [sessions, setSessions] = useState<SessionEntry[] | null>(null);
   const [registrations, setRegistrations] = useState<Record<string, Registration[]>>({});
   const [users, setUsers] = useState<{ uid: string; data: UserDoc }[] | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm);
+  const [form, setForm] = useState<FormState>(() => ({ ...emptyForm, date: todayString() }));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -132,8 +140,23 @@ export function AdminSessions() {
 
   function cancelEdit() {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, date: todayString() });
     setError("");
+  }
+
+  function duplicate(s: SessionEntry) {
+    setEditingId(null);
+    setForm({
+      date: s.data.date,
+      startTime: s.data.startTime,
+      endTime: s.data.endTime,
+      location: s.data.location,
+      capacity: s.data.capacity ? String(s.data.capacity) : "",
+      cost: "",
+      playersOverride: "",
+    });
+    setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function submit(e: FormEvent) {
@@ -280,6 +303,13 @@ export function AdminSessions() {
               className="rounded-lg border border-slate-300 px-3 py-1 text-sm font-medium hover:bg-slate-50"
             >
               Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => duplicate(s)}
+              className="rounded-lg border border-slate-300 px-3 py-1 text-sm font-medium hover:bg-slate-50"
+            >
+              Copy settings
             </button>
             <button
               type="button"

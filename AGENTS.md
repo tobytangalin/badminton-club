@@ -54,7 +54,10 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   - `ratings/{ratedUid}_{raterUid}` — `stars` 1–5
   - `sessions/{id}/matches/{matchId}` — reserved for future match results
 - **Registration** uses a client `runTransaction` (write registration + `increment`
-  session `count`) with rules checking capacity.
+  session `count`) with rules checking capacity. Admins can also add/remove members
+  from a session via the "Manage participants" checkbox picker in `AdminSessions`
+  (`adminAddRegistration` in `lib/db.ts`); this bypasses capacity so a session can
+  be overfull. Registration create in `firestore.rules` allows `isAdmin() || isSelf(uid)`.
 - **Costs**: `lib/payments.ts` — `perPlayerCost = cost / (playersOverride ?? count)`;
   currency is `NEXT_PUBLIC_CURRENCY` (default `DKK`).
 - **Dates**: sessions store ISO `date` + 24h `startTime`/`endTime`.
@@ -67,7 +70,11 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   times, location and capacity. `cost` and `playersOverride` ("how many joined")
   appear only while editing (they can't be known until the session happens). The
   list is split into Upcoming and a collapsible Past section; `AdminPanel`
-  defaults to the Sessions tab.
+  defaults to the Sessions tab. Each session's player list is capped at 8 with a
+  "Show all" toggle; "Manage participants" opens a searchable checkbox picker
+  (add/remove in bulk, applies via `adminAddRegistration`/`unregisterFromSession`).
+  "Copy settings" pre-fills the Add form with a session's date/times/location/
+  capacity (cost and playersOverride stay empty) to create a new session.
 
 ## Resource usage patterns (preserve these)
 
@@ -81,6 +88,8 @@ regress these:
   rater in `lib/db.ts` (`LEADERBOARD_TTL_MS`). Rating a player recomputes that
   row locally (`applyRating`) and calls `invalidateLeaderboardCache()` — there is
   **no refetch after rating and no polling** (polling would blow the read budget).
+  The Members page renders as cards on mobile and a `table-fixed` table on
+  desktop — keep it that way so the page **never shows a horizontal scrollbar**.
 - **Session registrations** (`SessionsView`): ONE live `onSnapshot` on `sessions`;
   a session's registrations are fetched once with `getDocs` only when its `count`
   changes (tracked via `countsRef`). Avoid adding a per-session listener loop.
