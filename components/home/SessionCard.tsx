@@ -119,12 +119,20 @@ export function SessionCard({
           <p className="text-sm text-slate-500">No one signed up yet. Be the first!</p>
         ) : (
           <>
-            <ul className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <ul className="flex flex-wrap items-center gap-x-3 gap-y-2">
               {(showAllPlayers ? registrations : registrations.slice(0, PREVIEW_COUNT)).map(
                 (r) => (
-                  <li key={r.uid} className="flex items-center gap-1.5" title={r.nickname}>
-                    <Avatar src={r.photoUrl} name={r.nickname} size="sm" />
-                    <span className="text-sm text-slate-700">{r.nickname}</span>
+                  <li key={r.uid} className="group relative">
+                    <button
+                      type="button"
+                      aria-label={r.nickname}
+                      className="block rounded-full focus-visible:outline-2 focus-visible:outline-teal-500"
+                    >
+                      <Avatar src={r.photoUrl} name={r.nickname} size="sm" />
+                    </button>
+                    <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs text-white opacity-0 shadow transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+                      {r.nickname}
+                    </span>
                   </li>
                 )
               )}

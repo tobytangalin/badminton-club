@@ -57,7 +57,9 @@ export function AdminSessions() {
   const [savedLocations, setSavedLocations] = useState<string[]>([]);
   const [showPast, setShowPast] = useState(false);
   const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({});
-  const [addPlayerUid, setAddPlayerUid] = useState<Record<string, string>>({});
+  const [addOpen, setAddOpen] = useState<Record<string, boolean>>({});
+  const [addSelected, setAddSelected] = useState<Record<string, string[]>>({});
+  const [addSearch, setAddSearch] = useState<Record<string, string>>({});
   const [addBusy, setAddBusy] = useState<string | null>(null);
 
   useEffect(() => {
@@ -198,30 +200,45 @@ export function AdminSessions() {
     }
   }
 
-  async function removeUser(sessionId: string, uid: string) {
-    setError("");
-    try {
-      await unregisterFromSession(sessionId, uid);
-    } catch (err) {
-      console.error(err);
-      setError("Could not remove player.");
-    }
+  function toggleSelect(sessionId: string, uid: string) {
+    setAddSelected((prev) => {
+      const cur = prev[sessionId] ?? [];
+      const next = cur.includes(uid)
+        ? cur.filter((u) => u !== uid)
+        : [...cur, uid];
+      return { ...prev, [sessionId]: next };
+    });
   }
 
-  async function addUser(sessionId: string, uid: string) {
-    const user = users?.find((u) => u.uid === uid);
-    if (!user) return;
+  async function applyChanges(sessionId: string, regs: Registration[]) {
+    const selected = addSelected[sessionId] ?? [];
+    const selectedSet = new Set(selected);
+    const toAdd = selected.filter((uid) => !regs.some((r) => r.uid === uid));
+    const toRemove = regs.filter((r) => !selectedSet.has(r.uid)).map((r) => r.uid);
+    if (toAdd.length === 0 && toRemove.length === 0) {
+      setAddOpen((prev) => ({ ...prev, [sessionId]: false }));
+      return;
+    }
     setAddBusy(sessionId);
     setError("");
     try {
-      await adminAddRegistration(sessionId, uid, {
-        nickname: user.data.nickname,
-        photoUrl: user.data.photoUrl,
-      });
-      setAddPlayerUid((prev) => ({ ...prev, [sessionId]: "" }));
+      for (const uid of toAdd) {
+        const user = users?.find((u) => u.uid === uid);
+        if (!user) continue;
+        await adminAddRegistration(sessionId, uid, {
+          nickname: user.data.nickname,
+          photoUrl: user.data.photoUrl,
+        });
+      }
+      for (const uid of toRemove) {
+        await unregisterFromSession(sessionId, uid);
+      }
+      setAddOpen((prev) => ({ ...prev, [sessionId]: false }));
+      setAddSelected((prev) => ({ ...prev, [sessionId]: [] }));
+      setAddSearch((prev) => ({ ...prev, [sessionId]: "" }));
     } catch (err) {
       console.error(err);
-      setError("Could not add player.");
+      setError("Could not save member changes.");
     } finally {
       setAddBusy(null);
     }
@@ -231,9 +248,18 @@ export function AdminSessions() {
     const regs = registrations[s.id] ?? [];
     const expanded = !!expandedPlayers[s.id];
     const shown = expanded ? regs : regs.slice(0, PREVIEW_COUNT);
-    const available = (users ?? [])
-      .filter((u) => !regs.some((r) => r.uid === u.uid))
+    const members = (users ?? [])
+      .slice()
       .sort((a, b) => a.data.nickname.localeCompare(b.data.nickname));
+    const search = (addSearch[s.id] ?? "").toLowerCase();
+    const filtered = search
+      ? members.filter((u) => (u.data.nickname || "").toLowerCase().includes(search))
+      : members;
+    const selected = addSelected[s.id] ?? [];
+    const selectedSet = new Set(selected);
+    const toAdd = selected.filter((uid) => !regs.some((r) => r.uid === uid));
+    const toRemove = regs.filter((r) => !selectedSet.has(r.uid));
+    const pickerOpen = !!addOpen[s.id];
     return (
       <li key={s.id} className="rounded-2xl border border-slate-200 bg-white p-4">
         <div className="flex items-start justify-between gap-2">
@@ -271,13 +297,6 @@ export function AdminSessions() {
               <li key={r.uid} className="flex items-center gap-2 text-sm">
                 <Avatar src={r.photoUrl} name={r.nickname} size="sm" />
                 <span className="flex-1">{r.nickname}</span>
-                <button
-                  type="button"
-                  onClick={() => removeUser(s.id, r.uid)}
-                  className="text-xs font-medium text-red-600 hover:underline"
-                >
-                  Remove
-                </button>
               </li>
             ))}
           </ul>
@@ -295,30 +314,83 @@ export function AdminSessions() {
           </button>
         )}
 
-        <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
-          <select
-            value={addPlayerUid[s.id] ?? ""}
-            onChange={(e) =>
-              setAddPlayerUid((prev) => ({ ...prev, [s.id]: e.target.value }))
-            }
-            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-            aria-label="Add member"
-          >
-            <option value="">Add member…</option>
-            {available.map((u) => (
-              <option key={u.uid} value={u.uid}>
-                {u.data.nickname || "Unnamed"}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            disabled={!addPlayerUid[s.id] || addBusy === s.id}
-            onClick={() => addUser(s.id, addPlayerUid[s.id])}
-            className="shrink-0 rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
-          >
-            {addBusy === s.id ? "Adding…" : "Add"}
-          </button>
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          {pickerOpen ? (
+            <div>
+              <input
+                type="text"
+                value={addSearch[s.id] ?? ""}
+                onChange={(e) =>
+                  setAddSearch((prev) => ({ ...prev, [s.id]: e.target.value }))
+                }
+                placeholder="Search members…"
+                className="mb-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              />
+              <ul className="max-h-56 space-y-0.5 overflow-y-auto rounded-lg border border-slate-200 p-1">
+                {filtered.length === 0 ? (
+                  <li className="px-2 py-3 text-center text-sm text-slate-500">
+                    No members found.
+                  </li>
+                ) : (
+                  filtered.map((u) => (
+                    <li key={u.uid}>
+                      <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-slate-50">
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(u.uid)}
+                          onChange={() => toggleSelect(s.id, u.uid)}
+                          className="size-4"
+                        />
+                        <Avatar src={u.data.photoUrl} name={u.data.nickname} size="sm" />
+                        <span className="truncate">{u.data.nickname || "Unnamed"}</span>
+                      </label>
+                    </li>
+                  ))
+                )}
+              </ul>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-3 text-sm text-slate-600">
+                  <span>
+                    {toAdd.length > 0 || toRemove.length > 0
+                      ? `${toAdd.length} to add · ${toRemove.length} to remove`
+                      : "No changes"}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddOpen((prev) => ({ ...prev, [s.id]: false }));
+                      setAddSelected((prev) => ({ ...prev, [s.id]: [] }));
+                      setAddSearch((prev) => ({ ...prev, [s.id]: "" }));
+                    }}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={addBusy === s.id || (toAdd.length === 0 && toRemove.length === 0)}
+                    onClick={() => applyChanges(s.id, regs)}
+                    className="rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+                  >
+                    {addBusy === s.id ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setAddOpen((prev) => ({ ...prev, [s.id]: true }));
+                setAddSelected((prev) => ({ ...prev, [s.id]: regs.map((r) => r.uid) }));
+              }}
+              className="rounded-lg border border-teal-600 px-3 py-1.5 text-sm font-medium text-teal-700 hover:bg-teal-50"
+            >
+              Manage participants
+            </button>
+          )}
         </div>
       </li>
     );

@@ -9,7 +9,7 @@ export function InfoTooltip({
   onToggle,
 }: {
   label: string;
-  align?: "center" | "right";
+  align?: "center" | "right" | "left";
   open: boolean;
   onToggle: () => void;
 }) {
@@ -33,6 +33,7 @@ export function InfoTooltip({
           "pointer-events-none absolute top-full z-10 mt-1.5 w-60 rounded-lg bg-slate-800 px-3 py-2 text-left text-xs leading-snug text-white shadow-lg",
           align === "center" && "left-1/2 -translate-x-1/2",
           align === "right" && "right-0",
+          align === "left" && "left-0",
           open ? "block" : "hidden group-hover:block"
         )}
       >
