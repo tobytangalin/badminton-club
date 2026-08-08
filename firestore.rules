@@ -51,7 +51,7 @@ service cloud.firestore {
 
       match /registrations/{uid} {
         allow read: if signedIn();
-        allow create: if isSelf(uid)
+        allow create: if (isSelf(uid) || isAdmin())
           && !exists(/databases/$(database)/documents/sessions/$(sessionId)/registrations/$(uid));
         allow update: if false;
         allow delete: if isSelf(uid) || isAdmin();

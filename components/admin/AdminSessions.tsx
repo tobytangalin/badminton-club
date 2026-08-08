@@ -7,15 +7,17 @@ import { cn } from "@/lib/cn";
 import { formatSessionDate, isSessionEnded, normalizeSession } from "@/lib/date";
 import { getSavedLocations, persistSavedLocations } from "@/lib/locations";
 import {
+  adminAddRegistration,
   createSession,
   deleteSession,
   registrationsRef,
   sessionsRef,
   unregisterFromSession,
   updateSession,
+  usersRef,
 } from "@/lib/db";
 import { useWhenVisible } from "@/lib/useWhenVisible";
-import type { Registration, SessionDoc } from "@/lib/types";
+import type { Registration, SessionDoc, UserDoc } from "@/lib/types";
 
 interface SessionEntry {
   id: string;
@@ -42,15 +44,21 @@ const emptyForm: FormState = {
   playersOverride: "",
 };
 
+const PREVIEW_COUNT = 8;
+
 export function AdminSessions() {
   const [sessions, setSessions] = useState<SessionEntry[] | null>(null);
   const [registrations, setRegistrations] = useState<Record<string, Registration[]>>({});
+  const [users, setUsers] = useState<{ uid: string; data: UserDoc }[] | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [savedLocations, setSavedLocations] = useState<string[]>([]);
   const [showPast, setShowPast] = useState(false);
+  const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({});
+  const [addPlayerUid, setAddPlayerUid] = useState<Record<string, string>>({});
+  const [addBusy, setAddBusy] = useState<string | null>(null);
 
   useEffect(() => {
     void Promise.resolve(getSavedLocations()).then(setSavedLocations);
@@ -76,8 +84,16 @@ export function AdminSessions() {
     return () => unsubs.forEach((u) => u());
   }, [sessions]);
 
+  const subscribeUsers = useCallback(() => {
+    const unsub = onSnapshot(usersRef(), (snap) => {
+      setUsers(snap.docs.map((d) => ({ uid: d.id, data: d.data() as UserDoc })));
+    });
+    return unsub;
+  }, []);
+
   useWhenVisible(subscribeSessions);
   useWhenVisible(subscribeRegistrations);
+  useWhenVisible(subscribeUsers);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -192,7 +208,32 @@ export function AdminSessions() {
     }
   }
 
+  async function addUser(sessionId: string, uid: string) {
+    const user = users?.find((u) => u.uid === uid);
+    if (!user) return;
+    setAddBusy(sessionId);
+    setError("");
+    try {
+      await adminAddRegistration(sessionId, uid, {
+        nickname: user.data.nickname,
+        photoUrl: user.data.photoUrl,
+      });
+      setAddPlayerUid((prev) => ({ ...prev, [sessionId]: "" }));
+    } catch (err) {
+      console.error(err);
+      setError("Could not add player.");
+    } finally {
+      setAddBusy(null);
+    }
+  }
+
   function renderSession(s: SessionEntry) {
+    const regs = registrations[s.id] ?? [];
+    const expanded = !!expandedPlayers[s.id];
+    const shown = expanded ? regs : regs.slice(0, PREVIEW_COUNT);
+    const available = (users ?? [])
+      .filter((u) => !regs.some((r) => r.uid === u.uid))
+      .sort((a, b) => a.data.nickname.localeCompare(b.data.nickname));
     return (
       <li key={s.id} className="rounded-2xl border border-slate-200 bg-white p-4">
         <div className="flex items-start justify-between gap-2">
@@ -202,7 +243,7 @@ export function AdminSessions() {
             </p>
             <p className="text-sm text-slate-600">{s.data.startTime}–{s.data.endTime}</p>
             <p className="text-sm text-slate-500">
-              {registrations[s.id]?.length ?? 0}
+              {regs.length}
               {typeof s.data.capacity === "number" ? `/${s.data.capacity}` : ""} signed up
             </p>
           </div>
@@ -224,9 +265,9 @@ export function AdminSessions() {
           </div>
         </div>
 
-        {(registrations[s.id] ?? []).length > 0 && (
+        {regs.length > 0 && (
           <ul className="mt-3 space-y-1">
-            {(registrations[s.id] ?? []).map((r) => (
+            {shown.map((r) => (
               <li key={r.uid} className="flex items-center gap-2 text-sm">
                 <Avatar src={r.photoUrl} name={r.nickname} size="sm" />
                 <span className="flex-1">{r.nickname}</span>
@@ -241,6 +282,44 @@ export function AdminSessions() {
             ))}
           </ul>
         )}
+
+        {regs.length > PREVIEW_COUNT && (
+          <button
+            type="button"
+            onClick={() =>
+              setExpandedPlayers((prev) => ({ ...prev, [s.id]: !expanded }))
+            }
+            className="mt-2 text-sm font-semibold text-teal-700 hover:text-teal-800"
+          >
+            {expanded ? "Show fewer" : `Show all (${regs.length})`}
+          </button>
+        )}
+
+        <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+          <select
+            value={addPlayerUid[s.id] ?? ""}
+            onChange={(e) =>
+              setAddPlayerUid((prev) => ({ ...prev, [s.id]: e.target.value }))
+            }
+            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            aria-label="Add member"
+          >
+            <option value="">Add member…</option>
+            {available.map((u) => (
+              <option key={u.uid} value={u.uid}>
+                {u.data.nickname || "Unnamed"}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!addPlayerUid[s.id] || addBusy === s.id}
+            onClick={() => addUser(s.id, addPlayerUid[s.id])}
+            className="shrink-0 rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+          >
+            {addBusy === s.id ? "Adding…" : "Add"}
+          </button>
+        </div>
       </li>
     );
   }

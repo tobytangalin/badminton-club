@@ -109,6 +109,31 @@ export async function registerForSession(
   });
 }
 
+export async function adminAddRegistration(
+  sessionId: string,
+  uid: string,
+  user: Pick<UserDoc, "nickname"> & { photoUrl?: string }
+): Promise<void> {
+  const db = getDb();
+  await runTransaction(db, async (tx) => {
+    const sessionRef = sessionDoc(sessionId);
+    const regRef = doc(registrationsRef(sessionId), uid);
+    const [regSnap, sessionSnap] = await Promise.all([
+      tx.get(regRef),
+      tx.get(sessionRef),
+    ]);
+    if (regSnap.exists()) throw new Error("Already registered.");
+    if (!sessionSnap.exists()) throw new Error("Session not found.");
+    tx.set(regRef, {
+      uid,
+      nickname: user.nickname,
+      photoUrl: user.photoUrl ?? "",
+      createdAt: serverTimestamp(),
+    } satisfies Registration);
+    tx.update(sessionRef, { count: increment(1) });
+  });
+}
+
 export async function unregisterFromSession(
   sessionId: string,
   uid: string

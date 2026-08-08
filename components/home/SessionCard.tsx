@@ -29,6 +29,8 @@ export function SessionCard({
 }: SessionCardProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showAllPlayers, setShowAllPlayers] = useState(false);
+  const PREVIEW_COUNT = 8;
 
   const isRegistered = registrations.some((r) => r.uid === currentUid);
   const capacity = session.capacity;
@@ -116,14 +118,29 @@ export function SessionCard({
         {registrations.length === 0 ? (
           <p className="text-sm text-slate-500">No one signed up yet. Be the first!</p>
         ) : (
-          <ul className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            {registrations.map((r) => (
-              <li key={r.uid} className="flex items-center gap-1.5" title={r.nickname}>
-                <Avatar src={r.photoUrl} name={r.nickname} size="sm" />
-                <span className="text-sm text-slate-700">{r.nickname}</span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {(showAllPlayers ? registrations : registrations.slice(0, PREVIEW_COUNT)).map(
+                (r) => (
+                  <li key={r.uid} className="flex items-center gap-1.5" title={r.nickname}>
+                    <Avatar src={r.photoUrl} name={r.nickname} size="sm" />
+                    <span className="text-sm text-slate-700">{r.nickname}</span>
+                  </li>
+                )
+              )}
+            </ul>
+            {registrations.length > PREVIEW_COUNT && (
+              <button
+                type="button"
+                onClick={() => setShowAllPlayers((v) => !v)}
+                className="mt-2 text-sm font-semibold text-teal-700 hover:text-teal-800"
+              >
+                {showAllPlayers
+                  ? "Show fewer"
+                  : `and ${registrations.length - PREVIEW_COUNT} more`}
+              </button>
+            )}
+          </>
         )}
       </div>
 
