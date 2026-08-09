@@ -50,10 +50,19 @@ export async function DELETE(
       countsBySession.set(sessionId, (countsBySession.get(sessionId) ?? 0) + 1);
       batch.delete(d.ref);
     });
+
+    const sessionRefs = [...countsBySession.keys()].map((sessionId) =>
+      db.collection("sessions").doc(sessionId)
+    );
+    const existingSessions = new Set(
+      sessionRefs.length ? (await db.getAll(...sessionRefs)).filter((s) => s.exists).map((s) => s.id) : []
+    );
     countsBySession.forEach((n, sessionId) => {
-      batch.update(db.collection("sessions").doc(sessionId), {
-        count: FieldValue.increment(-n),
-      });
+      if (existingSessions.has(sessionId)) {
+        batch.update(db.collection("sessions").doc(sessionId), {
+          count: FieldValue.increment(-n),
+        });
+      }
     });
 
     batch.delete(db.collection("users").doc(uid));

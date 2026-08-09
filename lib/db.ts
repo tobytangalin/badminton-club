@@ -9,6 +9,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 import {
   getDownloadURL,
@@ -255,7 +256,11 @@ export async function updateSession(
 }
 
 export async function deleteSession(id: string): Promise<void> {
-  await deleteDoc(sessionDoc(id));
+  const regs = await getDocs(registrationsRef(id));
+  const batch = writeBatch(getDb());
+  regs.forEach((d) => batch.delete(d.ref));
+  batch.delete(sessionDoc(id));
+  await batch.commit();
 }
 
 export async function setUserRole(uid: string, role: "member" | "admin"): Promise<void> {

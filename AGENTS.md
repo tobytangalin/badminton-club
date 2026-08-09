@@ -48,7 +48,9 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   server runs under `node.exe`; needs Firestore + Firebase Auth Admin roles);
   deployed Cloud Run uses Workload Identity. Admins delete
   users from `AdminUsers`; members delete themselves from `ProfileCard`
-  (Edit → "Delete account" → type their nickname to confirm).
+  (Edit → "Delete account" → type their nickname to confirm). The delete route
+  only decrements a session's count if the session doc still exists — orphaned
+  registrations from previously deleted sessions are cleaned up regardless.
 - **Lazy SDK init**: `lib/firebase.ts` never initializes at module top-level; call
   `getFirebaseApp()`/`getDb()` inside hooks/handlers so `next build` prerendering works.
 - **Firestore collections** (`lib/types.ts`):
@@ -83,7 +85,9 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   capacity (cost and playersOverride stay empty) to create a new session. The
   form validates: new sessions can't be dated in the past (date `min` + submit
   check) and end time must be after start time; editing past sessions is allowed
-  so cost/playersOverride can be added after a session happens.
+  so cost/playersOverride can be added after a session happens. Deleting a
+  session cascades: `deleteSession` batch-deletes its registrations + the
+  session doc (so registrations aren't orphaned).
 
 ## Resource usage patterns (preserve these)
 
