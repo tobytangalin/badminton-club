@@ -35,12 +35,18 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
 ## Architecture at a glance
 
 - **Auth**: Firebase Auth (Google SSO + email/password). `components/AuthProvider.tsx`
-  exposes `user`, `userData`, `loading`, `isAdmin`, `needsProfile`.
+  exposes `user`, `userData`, `loading`, `isAdmin`, `needsProfile`. The `/login`
+  page has an inline password-reset flow (`sendPasswordResetEmail`) that shows a
+  generic success message to avoid account enumeration.
 - **Most data ops are CLIENT-SIDE** with enforcement in `firestore.rules`
   (roles, capacity, ratings). Only `app/api/bootstrap`, the optional admin API
   routes, and `app/api/admin/users/[uid]` (DELETE — deletes an auth account +
   Firestore data; used for both admin-deletes-user and member-deletes-self)
-  use `firebase-admin` (requires a service account; optional). Admins delete
+  use `firebase-admin` (requires a service account; optional). Locally the admin
+  API returns 401 `Unauthorized` unless `GOOGLE_APPLICATION_CREDENTIALS` points
+  at a service-account JSON key (set in `.env.local`, Windows path since the dev
+  server runs under `node.exe`; needs Firestore + Firebase Auth Admin roles);
+  deployed Cloud Run uses Workload Identity. Admins delete
   users from `AdminUsers`; members delete themselves from `ProfileCard`
   (Edit → "Delete account" → type their nickname to confirm).
 - **Lazy SDK init**: `lib/firebase.ts` never initializes at module top-level; call
@@ -74,7 +80,10 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   "Show all" toggle; "Manage participants" opens a searchable checkbox picker
   (add/remove in bulk, applies via `adminAddRegistration`/`unregisterFromSession`).
   "Copy settings" pre-fills the Add form with a session's date/times/location/
-  capacity (cost and playersOverride stay empty) to create a new session.
+  capacity (cost and playersOverride stay empty) to create a new session. The
+  form validates: new sessions can't be dated in the past (date `min` + submit
+  check) and end time must be after start time; editing past sessions is allowed
+  so cost/playersOverride can be added after a session happens.
 
 ## Resource usage patterns (preserve these)
 
@@ -90,6 +99,8 @@ regress these:
   **no refetch after rating and no polling** (polling would blow the read budget).
   The Members page renders as cards on mobile and a `table-fixed` table on
   desktop — keep it that way so the page **never shows a horizontal scrollbar**.
+  Mobile shows Name / Power level sort pills in the list header (shared sort
+  state with the desktop table).
 - **Session registrations** (`SessionsView`): ONE live `onSnapshot` on `sessions`;
   a session's registrations are fetched once with `getDocs` only when its `count`
   changes (tracked via `countsRef`). Avoid adding a per-session listener loop.
@@ -145,9 +156,9 @@ regress these:
   `_COMMIT_SHA` explicitly.
 - `./deploy.sh` — same but via local Docker (requires Docker installed).
 - Keep `min-instances=0`, `max-instances=2`, CPU throttling (costs $0 when idle).
-- **Rules deploy: `./deploy-rules.sh --project <id>`** (Firebase CLI;
-  `gcloud firestore rules` no longer exists in recent gcloud). `firebase.json`
-  wires `firestore.rules` + indexes + `storage.rules`.
+- **Rules + indexes deploy: `./deploy-rules.sh --project <id>`** (Firebase CLI;
+  `gcloud firestore rules` no longer exists in recent gcloud). Deploys
+  `firestore.rules`, `firestore.indexes`, and `storage.rules`.
 - **First admin**: set `role: "admin"` on a user doc in the Firestore console (or
   `POST /api/bootstrap` with `ADMIN_EMAILS` set + a service account).
 - Platform facts: Firebase Storage requires the **Blaze plan** (card on file, still
@@ -161,3 +172,8 @@ regress these:
   aggregation, and add a `components/matches/` + `app/matches/` route.
 - New collections need a matching rule block + type; keep subcollections under
   their parent so reads stay grouped.
+- Collection-group single-field indexes go in `firestore.indexes.json` under
+  `fieldOverrides` (exemptions) with `queryScope: COLLECTION_GROUP` — a plain
+  `indexes` entry is rejected by the CLI ("not necessary, configure using single
+  field index controls"). Example: the `registrations.uid` collection-group index
+  used by admin user deletion (`app/api/admin/users/[uid]`).

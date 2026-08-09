@@ -25,7 +25,7 @@ export function InfoTooltip({
           open ? "bg-teal-600" : "bg-slate-300 hover:bg-teal-600"
         )}
       >
-        !
+        ?
       </button>
       <span
         role="tooltip"

@@ -165,6 +165,10 @@ export function AdminSessions() {
       setError("Date and location are required.");
       return;
     }
+    if (!editingId && form.date < todayString()) {
+      setError("Date cannot be earlier than today.");
+      return;
+    }
     const capacity = form.capacity.trim() ? parseInt(form.capacity, 10) : null;
     if (capacity !== null && (!Number.isFinite(capacity) || capacity < 1)) {
       setError("Capacity must be at least 1.");
@@ -453,6 +457,7 @@ export function AdminSessions() {
           <input
             type="date"
             value={form.date}
+            min={editingId ? undefined : todayString()}
             onChange={(e) => set("date", e.target.value)}
             className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
           />

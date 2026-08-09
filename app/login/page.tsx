@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
 } from "firebase/auth";
@@ -26,6 +27,9 @@ export default function LoginPage() {
   const [nickname, setNickname] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showReset, setShowReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSent, setResetSent] = useState(false);
 
   useEffect(() => {
     if (user) router.replace("/");
@@ -84,12 +88,84 @@ export default function LoginPage() {
     }
   }
 
+  async function handleReset(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!resetEmail.trim()) {
+      setError("Please enter your email address.");
+      return;
+    }
+    setBusy(true);
+    try {
+      requireFirebaseConfigured();
+      await sendPasswordResetEmail(getAuthClient(), resetEmail.trim());
+      setResetSent(true);
+    } catch (err) {
+      if ((err as { code?: string })?.code === "auth/user-not-found") {
+        setResetSent(true);
+      } else {
+        setError(friendlyError(err));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-sm py-8">
       <h1 className="mb-6 text-center text-2xl font-bold">
         {mode === "signin" ? "Welcome back" : "Join the club"}
       </h1>
 
+      {showReset ? (
+        <div className="rounded-xl border border-slate-200 p-4">
+          <h2 className="mb-1 text-center font-semibold">Reset password</h2>
+          <p className="mb-3 text-center text-sm text-slate-500">
+            Enter your email and we&apos;ll send you a link to set a new password.
+          </p>
+          {resetSent ? (
+            <p className="rounded-lg bg-teal-50 px-3 py-2 text-sm text-teal-700">
+              If an account exists for that email, a password reset link is on its way.
+            </p>
+          ) : (
+            <form onSubmit={handleReset} className="space-y-3">
+              <label htmlFor="reset-email" className="mb-1 block text-sm font-medium">
+                Email
+              </label>
+              <input
+                id="reset-email"
+                type="email"
+                required
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
+              />
+              {error && (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+              )}
+              <button
+                type="submit"
+                disabled={busy}
+                className="w-full rounded-xl bg-teal-600 px-4 py-2.5 font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+              >
+                {busy ? "Sending…" : "Send reset link"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReset(false);
+                  setResetSent(false);
+                  setError("");
+                }}
+                className="w-full rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+              >
+                ← Back to sign in
+              </button>
+            </form>
+          )}
+        </div>
+      ) : (
+        <>
       <button
         type="button"
         onClick={handleGoogle}
@@ -166,6 +242,21 @@ export default function LoginPage() {
             className="w-full rounded-xl border border-slate-300 px-3 py-2.5"
           />
         </div>
+        {mode === "signin" && (
+          <div className="text-right">
+            <button
+              type="button"
+              onClick={() => {
+                setResetEmail(email);
+                setShowReset(true);
+                setError("");
+              }}
+              className="text-sm font-medium text-teal-700 hover:underline"
+            >
+              Forgot password?
+            </button>
+          </div>
+        )}
 
         {error && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
@@ -189,6 +280,8 @@ export default function LoginPage() {
           ← Back to home
         </Link>
       </p>
+      </>
+      )}
     </div>
   );
 }

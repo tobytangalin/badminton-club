@@ -6,6 +6,7 @@ import { FractionalShuttle } from "@/components/Shuttle";
 import { InfoTooltip } from "@/components/InfoTooltip";
 import { StarRating } from "@/components/StarRating";
 import { Spinner } from "@/components/Spinner";
+import { cn } from "@/lib/cn";
 import {
   clearRating,
   fetchLeaderboard,
@@ -59,6 +60,55 @@ function SortHeader({
         )}
       </div>
     </th>
+  );
+}
+
+function SortPill({
+  label,
+  info,
+  sortBy,
+  active,
+  dir,
+  onToggle,
+  tooltipOpen,
+  onTooltipToggle,
+  align,
+}: {
+  label: string;
+  info?: string;
+  sortBy: SortKey;
+  active: boolean;
+  dir: SortDir;
+  onToggle: (key: SortKey) => void;
+  tooltipOpen?: boolean;
+  onTooltipToggle?: () => void;
+  align?: "left" | "right";
+}) {
+  const arrow = !active ? "" : dir === "asc" ? "↑" : "↓";
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => onToggle(sortBy)}
+        className={cn(
+          "rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors",
+          active
+            ? "border-teal-600 bg-teal-600 text-white"
+            : "border-slate-300 bg-white text-slate-600 hover:border-teal-600 hover:text-teal-700"
+        )}
+      >
+        {label}
+        {arrow && <span className="ml-0.5">{arrow}</span>}
+      </button>
+      {info && (
+        <InfoTooltip
+          align={align}
+          label={info}
+          open={tooltipOpen ?? false}
+          onToggle={onTooltipToggle ?? (() => {})}
+        />
+      )}
+    </span>
   );
 }
 
@@ -259,17 +309,29 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
             </table>
           </div>
 
-          <div className="mb-2 mt-4 flex items-center justify-between px-1 text-xs font-medium text-slate-500 sm:hidden">
-            <span className="flex items-center gap-1">
-              Power level
-              <InfoTooltip
-                align="left"
-                label="Power level is a player's badminton skill as rated by club members."
-                open={openTooltip === "power"}
-                onToggle={() => toggleTooltip("power")}
+          <div className="mb-2 mt-4 flex items-center justify-between gap-2 px-1 text-xs font-medium text-slate-500 sm:hidden">
+            <div className="flex items-center gap-1.5">
+              <span className="shrink-0 text-slate-400">Sort by</span>
+              <SortPill
+                label="Name"
+                sortBy="name"
+                active={sortKey === "name"}
+                dir={sortDir}
+                onToggle={toggleSort}
               />
-            </span>
-            <span className="flex items-center gap-1">
+              <SortPill
+                label="Power level"
+                sortBy="power"
+                active={sortKey === "power"}
+                dir={sortDir}
+                onToggle={toggleSort}
+                info="Power level is a player's badminton skill as rated by club members."
+                tooltipOpen={openTooltip === "power"}
+                onTooltipToggle={() => toggleTooltip("power")}
+                align="left"
+              />
+            </div>
+            <span className="flex shrink-0 items-center gap-1">
               My rating
               <InfoTooltip
                 align="right"
