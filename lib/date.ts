@@ -29,7 +29,7 @@ export function normalizeSession(
   const startTime = data.startTime ?? data.time ?? "00:00";
   const endTime = data.endTime ?? addHours(startTime, 2);
   const date = data.date && data.date.length > 0 ? data.date : legacySessionDate(data.day ?? "");
-  return { ...data, date, startTime, endTime };
+  return { ...data, date, startTime, endTime, waitlistCount: data.waitlistCount ?? 0 };
 }
 
 /** Format an ISO `YYYY-MM-DD` date for display, e.g. "Sunday, August 9". */

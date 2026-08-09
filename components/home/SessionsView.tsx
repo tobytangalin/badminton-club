@@ -7,8 +7,8 @@ import { SessionCard } from "@/components/home/SessionCard";
 import { Spinner } from "@/components/Spinner";
 import { useWhenVisible } from "@/lib/useWhenVisible";
 import { isSessionEnded, normalizeSession } from "@/lib/date";
-import { sessionsRef, registrationsRef } from "@/lib/db";
-import type { Registration, SessionDoc } from "@/lib/types";
+import { sessionsRef, registrationsRef, waitlistRef } from "@/lib/db";
+import type { Registration, SessionDoc, WaitlistEntry } from "@/lib/types";
 
 interface SessionEntry {
   id: string;
@@ -19,7 +19,8 @@ export function SessionsView() {
   const { user, userData } = useAuth();
   const [sessions, setSessions] = useState<SessionEntry[] | null>(null);
   const [registrations, setRegistrations] = useState<Record<string, Registration[]>>({});
-  const countsRef = useRef<Record<string, number>>({});
+  const [waitlists, setWaitlists] = useState<Record<string, WaitlistEntry[]>>({});
+  const countsRef = useRef<Record<string, string>>({});
 
   const loadRegistrations = useCallback(async (ids: string[]) => {
     try {
@@ -36,6 +37,21 @@ export function SessionsView() {
     }
   }, []);
 
+  const loadWaitlists = useCallback(async (ids: string[]) => {
+    try {
+      const results = await Promise.all(ids.map((id) => getDocs(waitlistRef(id))));
+      setWaitlists((prev) => {
+        const nextWl = { ...prev };
+        results.forEach((snap, i) => {
+          nextWl[ids[i]] = snap.docs.map((d) => d.data() as WaitlistEntry);
+        });
+        return nextWl;
+      });
+    } catch (err) {
+      console.error("Failed to load waitlists", err);
+    }
+  }, []);
+
   const subscribe = useCallback(() => {
     countsRef.current = {};
     const unsub = onSnapshot(
@@ -48,10 +64,15 @@ export function SessionsView() {
         setSessions(next);
 
         const seen = new Set<string>();
-        const changed: string[] = [];
+        const changedRegs: string[] = [];
+        const changedWl: string[] = [];
         for (const { id, data } of next) {
           seen.add(id);
-          if (countsRef.current[id] !== data.count) changed.push(id);
+          const [prevCount, prevWl] = countsRef.current[id]?.split("|") ?? [undefined, undefined];
+          const count = String(data.count);
+          const wl = String(data.waitlistCount ?? 0);
+          if (prevCount !== count) changedRegs.push(id);
+          if (prevWl !== wl) changedWl.push(id);
         }
 
         const removed = Object.keys(countsRef.current).filter((id) => !seen.has(id));
@@ -61,14 +82,22 @@ export function SessionsView() {
             removed.forEach((id) => delete nextReg[id]);
             return nextReg;
           });
+          setWaitlists((prev) => {
+            const nextWl = { ...prev };
+            removed.forEach((id) => delete nextWl[id]);
+            return nextWl;
+          });
         }
 
         countsRef.current = Object.fromEntries(
-          next.map(({ id, data }) => [id, data.count])
+          next.map(({ id, data }) => [id, `${data.count}|${data.waitlistCount ?? 0}`])
         );
 
-        if (changed.length > 0) {
-          void loadRegistrations(changed);
+        if (changedRegs.length > 0) {
+          void loadRegistrations(changedRegs);
+        }
+        if (changedWl.length > 0) {
+          void loadWaitlists(changedWl);
         }
       },
       (err) => {
@@ -77,7 +106,7 @@ export function SessionsView() {
       }
     );
     return unsub;
-  }, [loadRegistrations]);
+  }, [loadRegistrations, loadWaitlists]);
 
   useWhenVisible(subscribe);
 
@@ -109,6 +138,7 @@ export function SessionsView() {
                 sessionId={s.id}
                 session={s.data}
                 registrations={registrations[s.id] ?? []}
+                waitlist={waitlists[s.id] ?? []}
                 currentUid={user?.uid ?? ""}
                 currentNickname={userData?.nickname ?? ""}
                 currentPhotoUrl={userData?.photoUrl}

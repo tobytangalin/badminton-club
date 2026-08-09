@@ -20,6 +20,8 @@ export interface SessionDoc {
   /** Optional max players; null/absent means no limit. */
   capacity?: number | null;
   count: number;
+  /** How many members are on the waitlist (when the session is full). */
+  waitlistCount?: number;
   /** Total cost of the session, shared between the players who played. */
   cost?: number | null;
   /** Optional override of how many players actually played (defaults to count). */
@@ -28,6 +30,13 @@ export interface SessionDoc {
 }
 
 export interface Registration {
+  uid: string;
+  nickname: string;
+  photoUrl?: string;
+  createdAt?: unknown;
+}
+
+export interface WaitlistEntry {
   uid: string;
   nickname: string;
   photoUrl?: string;

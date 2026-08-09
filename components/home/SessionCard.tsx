@@ -2,16 +2,17 @@
 
 import { useState } from "react";
 import { Avatar } from "@/components/Avatar";
-import { registerForSession, unregisterFromSession } from "@/lib/db";
+import { joinWaitlist, leaveWaitlist, registerForSession, unregisterFromSession } from "@/lib/db";
 import { formatSessionDate } from "@/lib/date";
 import { formatMoney, perPlayerCost } from "@/lib/payments";
-import type { Registration, SessionDoc } from "@/lib/types";
+import type { Registration, SessionDoc, WaitlistEntry } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 interface SessionCardProps {
   sessionId: string;
   session: SessionDoc;
   registrations: Registration[];
+  waitlist: WaitlistEntry[];
   currentUid: string;
   currentNickname: string;
   currentPhotoUrl?: string;
@@ -22,6 +23,7 @@ export function SessionCard({
   sessionId,
   session,
   registrations,
+  waitlist,
   currentUid,
   currentNickname,
   currentPhotoUrl,
@@ -33,10 +35,13 @@ export function SessionCard({
   const PREVIEW_COUNT = 8;
 
   const isRegistered = registrations.some((r) => r.uid === currentUid);
+  const isWaitlisted = waitlist.some((w) => w.uid === currentUid);
+  const waitlistPosition = waitlist.findIndex((w) => w.uid === currentUid) + 1;
   const capacity = session.capacity;
   const hasCapacity = typeof capacity === "number";
   const isFull = hasCapacity && session.count >= capacity;
   const slotsLeft = hasCapacity ? Math.max(0, capacity - session.count) : 0;
+  const waitlistCount = session.waitlistCount ?? 0;
   const perPlayer = perPlayerCost(session);
 
   async function toggle() {
@@ -49,6 +54,19 @@ export function SessionCard({
     try {
       if (isRegistered) {
         await unregisterFromSession(sessionId, currentUid);
+      } else if (isWaitlisted) {
+        await leaveWaitlist(sessionId, currentUid);
+        if (!isFull) {
+          await registerForSession(sessionId, currentUid, {
+            nickname: currentNickname,
+            photoUrl: currentPhotoUrl,
+          });
+        }
+      } else if (isFull) {
+        await joinWaitlist(sessionId, currentUid, {
+          nickname: currentNickname,
+          photoUrl: currentPhotoUrl,
+        });
       } else {
         await registerForSession(sessionId, currentUid, {
           nickname: currentNickname,
@@ -114,6 +132,11 @@ export function SessionCard({
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
           Signed up ({registrations.length}
           {hasCapacity ? `/${session.capacity}` : ""})
+          {waitlistCount > 0 && (
+            <span className="ml-2 normal-case text-indigo-600">
+              · {waitlistCount} on waitlist
+            </span>
+          )}
         </p>
         {registrations.length === 0 ? (
           <p className="text-sm text-slate-500">No one signed up yet. Be the first!</p>
@@ -155,6 +178,13 @@ export function SessionCard({
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
       <div className="mt-4">
+        {isWaitlisted && !isRegistered && (
+          <p className="mb-2 text-sm font-medium text-indigo-700">
+            {isFull
+              ? `You're #${waitlistPosition || "?"} on the waitlist. You'll be moved in automatically if a spot opens.`
+              : "A spot just opened — claim it now!"}
+          </p>
+        )}
         <button
           type="button"
           onClick={toggle}
@@ -163,8 +193,8 @@ export function SessionCard({
             "w-full rounded-xl px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-50 sm:w-auto",
             isRegistered
               ? "border border-slate-300 text-slate-700 hover:bg-slate-50"
-              : isFull
-                ? "cursor-not-allowed bg-slate-200 text-slate-500"
+              : isWaitlisted
+                ? "border border-indigo-600 text-indigo-700 hover:bg-indigo-50"
                 : "bg-teal-600 text-white hover:bg-teal-700"
           )}
         >
@@ -172,9 +202,13 @@ export function SessionCard({
             ? "Working…"
             : isRegistered
               ? "Leave session"
-              : isFull
-                ? "Full"
-                : "Register"}
+              : isWaitlisted
+                ? isFull
+                  ? "Leave waitlist"
+                  : "Join now"
+                : isFull
+                  ? "Join waitlist"
+                  : "Register"}
         </button>
       </div>
     </article>

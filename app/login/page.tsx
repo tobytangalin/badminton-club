@@ -150,19 +150,19 @@ export default function LoginPage() {
               >
                 {busy ? "Sending…" : "Send reset link"}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowReset(false);
-                  setResetSent(false);
-                  setError("");
-                }}
-                className="w-full rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-              >
-                ← Back to sign in
-              </button>
             </form>
           )}
+          <button
+            type="button"
+            onClick={() => {
+              setShowReset(false);
+              setResetSent(false);
+              setError("");
+            }}
+            className="mt-3 w-full rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+          >
+            ← Back to sign in
+          </button>
         </div>
       ) : (
         <>

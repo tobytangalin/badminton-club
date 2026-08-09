@@ -50,15 +50,18 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   users from `AdminUsers`; members delete themselves from `ProfileCard`
   (Edit → "Delete account" → type their nickname to confirm). The delete route
   only decrements a session's count if the session doc still exists — orphaned
-  registrations from previously deleted sessions are cleaned up regardless.
+  registrations from previously deleted sessions are cleaned up regardless. It
+  also deletes the user's `waitlist` docs and decrements `waitlistCount`.
 - **Lazy SDK init**: `lib/firebase.ts` never initializes at module top-level; call
   `getFirebaseApp()`/`getDb()` inside hooks/handlers so `next build` prerendering works.
 - **Firestore collections** (`lib/types.ts`):
   - `users/{uid}` — `nickname`, `photoUrl`, `role` (`member`|`admin`), `email`
   - `sessions/{id}` — `date` (ISO `YYYY-MM-DD`), `startTime`, `endTime`,
-    `location`, `capacity` (optional; null/absent = no limit), `count`, `cost`
-    (total, optional), `playersOverride` (optional, overrides player count for
-    cost splitting); `sessions/{id}/registrations/{uid}` subcollection
+    `location`, `capacity` (optional; null/absent = no limit), `count`,
+    `waitlistCount` (optional; 0 when absent), `cost` (total, optional),
+    `playersOverride` (optional, overrides player count for cost splitting);
+    `sessions/{id}/registrations/{uid}` and
+    `sessions/{id}/waitlist/{uid}` subcollections
   - `ratings/{ratedUid}_{raterUid}` — `stars` 1–5
   - `sessions/{id}/matches/{matchId}` — reserved for future match results
 - **Registration** uses a client `runTransaction` (write registration + `increment`
@@ -66,6 +69,15 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   from a session via the "Manage participants" checkbox picker in `AdminSessions`
   (`adminAddRegistration` in `lib/db.ts`); this bypasses capacity so a session can
   be overfull. Registration create in `firestore.rules` allows `isAdmin() || isSelf(uid)`.
+- **Waitlist**: when a capped session is full, `SessionCard` offers "Join waitlist"
+  (`joinWaitlist` in `lib/db.ts` writes a `waitlist` subcollection doc + `increment`
+  `waitlistCount`; rules only allow it when the session is actually full). On
+  unregister, `unregisterFromSession` **auto-promotes** the oldest waitlisted member
+  into the freed spot in the same transaction (deletes their waitlist doc, writes
+  their registration, decrements both counts) — no polling, no manual admin step.
+  Waitlisted users see their queue position and can leave; `adminAddRegistration`
+  clears a stale waitlist doc if an admin adds someone directly. Sessions store
+  `waitlistCount: 0` at creation.
 - **Costs**: `lib/payments.ts` — `perPlayerCost = cost / (playersOverride ?? count)`;
   currency is `NEXT_PUBLIC_CURRENCY` (default `DKK`).
 - **Dates**: sessions store ISO `date` + 24h `startTime`/`endTime`.
@@ -107,7 +119,8 @@ regress these:
   state with the desktop table).
 - **Session registrations** (`SessionsView`): ONE live `onSnapshot` on `sessions`;
   a session's registrations are fetched once with `getDocs` only when its `count`
-  changes (tracked via `countsRef`). Avoid adding a per-session listener loop.
+  changes (tracked via `countsRef`), and its waitlist members only when
+  `waitlistCount` changes. Avoid adding a per-session listener loop.
 - Reads/writes are already batched and denormalized (registration embeds
   nickname/photoUrl so users aren't re-read on Home).
 - **Public images** (homepage hero, logo, committee photos) live in Firebase
@@ -179,5 +192,5 @@ regress these:
 - Collection-group single-field indexes go in `firestore.indexes.json` under
   `fieldOverrides` (exemptions) with `queryScope: COLLECTION_GROUP` — a plain
   `indexes` entry is rejected by the CLI ("not necessary, configure using single
-  field index controls"). Example: the `registrations.uid` collection-group index
-  used by admin user deletion (`app/api/admin/users/[uid]`).
+  field index controls"). Example: the `registrations.uid` and `waitlist.uid`
+  collection-group indexes used by admin user deletion (`app/api/admin/users/[uid]`).

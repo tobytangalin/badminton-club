@@ -5,6 +5,9 @@ import {
   getDoc,
   getDocs,
   increment,
+  limit,
+  orderBy,
+  query,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -23,6 +26,7 @@ import type {
   Registration,
   SessionDoc,
   UserDoc,
+  WaitlistEntry,
 } from "@/lib/types";
 
 export function usersRef() {
@@ -43,6 +47,10 @@ export function sessionDoc(id: string) {
 
 export function registrationsRef(sessionId: string) {
   return collection(getDb(), "sessions", sessionId, "registrations");
+}
+
+export function waitlistRef(sessionId: string) {
+  return collection(getDb(), "sessions", sessionId, "waitlist");
 }
 
 export function ratingsRef() {
@@ -119,9 +127,11 @@ export async function adminAddRegistration(
   await runTransaction(db, async (tx) => {
     const sessionRef = sessionDoc(sessionId);
     const regRef = doc(registrationsRef(sessionId), uid);
-    const [regSnap, sessionSnap] = await Promise.all([
+    const wlRef = doc(waitlistRef(sessionId), uid);
+    const [regSnap, sessionSnap, wlSnap] = await Promise.all([
       tx.get(regRef),
       tx.get(sessionRef),
+      tx.get(wlRef),
     ]);
     if (regSnap.exists()) throw new Error("Already registered.");
     if (!sessionSnap.exists()) throw new Error("Session not found.");
@@ -132,6 +142,10 @@ export async function adminAddRegistration(
       createdAt: serverTimestamp(),
     } satisfies Registration);
     tx.update(sessionRef, { count: increment(1) });
+    if (wlSnap.exists()) {
+      tx.delete(wlRef);
+      tx.update(sessionRef, { waitlistCount: increment(-1) });
+    }
   });
 }
 
@@ -140,9 +154,15 @@ export async function unregisterFromSession(
   uid: string
 ): Promise<void> {
   const db = getDb();
+  const sessionRef = sessionDoc(sessionId);
+  const regRef = doc(registrationsRef(sessionId), uid);
+
+  // tx.get only accepts document refs, so find the waitlist head first and
+  // re-check the candidate inside the transaction (it may have moved).
+  const headSnap = await getDocs(query(waitlistRef(sessionId), orderBy("createdAt"), limit(1)));
+  const headUid = headSnap.docs[0]?.id;
+
   await runTransaction(db, async (tx) => {
-    const sessionRef = sessionDoc(sessionId);
-    const regRef = doc(registrationsRef(sessionId), uid);
     const [regSnap, sessionSnap] = await Promise.all([
       tx.get(regRef),
       tx.get(sessionRef),
@@ -150,7 +170,75 @@ export async function unregisterFromSession(
     if (!regSnap.exists()) throw new Error("You are not registered.");
     tx.delete(regRef);
     const session = sessionSnap.data() as SessionDoc | undefined;
-    if (session) tx.update(sessionRef, { count: increment(-1) });
+    if (!session) return;
+
+    if (!headUid) {
+      tx.update(sessionRef, { count: increment(-1) });
+      return;
+    }
+
+    const headRef = doc(waitlistRef(sessionId), headUid);
+    const headDoc = await tx.get(headRef);
+    if (!headDoc.exists()) {
+      tx.update(sessionRef, { count: increment(-1) });
+      return;
+    }
+
+    const head = headDoc.data() as WaitlistEntry;
+    tx.set(doc(registrationsRef(sessionId), head.uid), {
+      uid: head.uid,
+      nickname: head.nickname,
+      photoUrl: head.photoUrl ?? "",
+      createdAt: serverTimestamp(),
+    } satisfies Registration);
+    tx.delete(headRef);
+    tx.update(sessionRef, {
+      count: increment(-1),
+      waitlistCount: increment(-1),
+    });
+  });
+}
+
+export async function joinWaitlist(
+  sessionId: string,
+  uid: string,
+  user: Pick<UserDoc, "nickname"> & { photoUrl?: string }
+): Promise<void> {
+  const db = getDb();
+  await runTransaction(db, async (tx) => {
+    const sessionRef = sessionDoc(sessionId);
+    const wlRef = doc(waitlistRef(sessionId), uid);
+    const [wlSnap, regSnap, sessionSnap] = await Promise.all([
+      tx.get(wlRef),
+      tx.get(doc(registrationsRef(sessionId), uid)),
+      tx.get(sessionRef),
+    ]);
+    if (wlSnap.exists()) throw new Error("You are already on the waitlist.");
+    if (regSnap.exists()) throw new Error("You are already registered.");
+    const session = sessionSnap.data() as SessionDoc | undefined;
+    if (!session) throw new Error("Session not found.");
+    if (typeof session.capacity !== "number" || session.count < session.capacity) {
+      throw new Error("Session is not full.");
+    }
+    tx.set(wlRef, {
+      uid,
+      nickname: user.nickname,
+      photoUrl: user.photoUrl ?? "",
+      createdAt: serverTimestamp(),
+    } satisfies WaitlistEntry);
+    tx.update(sessionRef, { waitlistCount: increment(1) });
+  });
+}
+
+export async function leaveWaitlist(sessionId: string, uid: string): Promise<void> {
+  const db = getDb();
+  await runTransaction(db, async (tx) => {
+    const sessionRef = sessionDoc(sessionId);
+    const wlRef = doc(waitlistRef(sessionId), uid);
+    const wlSnap = await tx.get(wlRef);
+    if (!wlSnap.exists()) throw new Error("You are not on the waitlist.");
+    tx.delete(wlRef);
+    tx.update(sessionRef, { waitlistCount: increment(-1) });
   });
 }
 
@@ -244,6 +332,7 @@ export async function createSession(
   await setDoc(doc(sessionsRef()), {
     ...data,
     count: 0,
+    waitlistCount: 0,
     createdAt: serverTimestamp(),
   });
 }
@@ -256,9 +345,13 @@ export async function updateSession(
 }
 
 export async function deleteSession(id: string): Promise<void> {
-  const regs = await getDocs(registrationsRef(id));
+  const [regs, wl] = await Promise.all([
+    getDocs(registrationsRef(id)),
+    getDocs(waitlistRef(id)),
+  ]);
   const batch = writeBatch(getDb());
   regs.forEach((d) => batch.delete(d.ref));
+  wl.forEach((d) => batch.delete(d.ref));
   batch.delete(sessionDoc(id));
   await batch.commit();
 }

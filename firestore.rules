@@ -35,26 +35,62 @@ service cloud.firestore {
 
     // Sessions ---------------------------------------------------------
     // Admins manage sessions. Members may only change the denormalized
-    // registration 'count' (+1 / -1) as part of a register/unregister
-    // transaction against the subcollection below.
+    // registration 'count' (+1 / -1) and/or waitlist 'waitlistCount'
+    // (+1 / -1) as part of a register/unregister/waitlist transaction
+    // against the subcollections below.
     match /sessions/{sessionId} {
-      function isRegistrationCountChange() {
+      function waitlistCountOf(doc) {
+        return 'waitlistCount' in doc.data ? doc.data.waitlistCount : 0;
+      }
+
+      function isSessionCountChange() {
         return signedIn()
-          && (request.resource.data.count == resource.data.count + 1
+          && (!('count' in request.resource.data)
+            || request.resource.data.count == resource.data.count + 1
             || request.resource.data.count == resource.data.count - 1);
+      }
+
+      function isWaitlistCountChange() {
+        return signedIn()
+          && (!('waitlistCount' in request.resource.data)
+            || request.resource.data.waitlistCount == waitlistCountOf(resource) + 1
+            || request.resource.data.waitlistCount == waitlistCountOf(resource) - 1);
+      }
+
+      function isSessionFull() {
+        return signedIn()
+          && get(/databases/$(database)/documents/sessions/$(sessionId)).data.capacity is int
+          && get(/databases/$(database)/documents/sessions/$(sessionId)).data.count
+            >= get(/databases/$(database)/documents/sessions/$(sessionId)).data.capacity;
       }
 
       allow read: if signedIn();
       allow create: if isAdmin();
-      allow update: if isAdmin() || isRegistrationCountChange();
+      allow update: if isAdmin() || (isSessionCountChange() && isWaitlistCountChange());
       allow delete: if isAdmin();
 
       match /registrations/{uid} {
         allow read: if signedIn();
-        allow create: if (isSelf(uid) || isAdmin())
+        // A member may be added automatically when they are first on a
+        // session's waitlist and a spot frees up (auto-promotion).
+        allow create: if (isSelf(uid) || isAdmin()
+          || exists(/databases/$(database)/documents/sessions/$(sessionId)/waitlist/$(uid)))
           && !exists(/databases/$(database)/documents/sessions/$(sessionId)/registrations/$(uid));
         allow update: if false;
         allow delete: if isSelf(uid) || isAdmin();
+      }
+
+      match /waitlist/{uid} {
+        allow read: if signedIn();
+        // Only join a waitlist when the session is actually full.
+        allow create: if (isSelf(uid) || isAdmin())
+          && !exists(/databases/$(database)/documents/sessions/$(sessionId)/waitlist/$(uid))
+          && isSessionFull();
+        allow update: if false;
+        // The delete may be part of the auto-promotion transaction, where
+        // the same user is simultaneously written to the registrations.
+        allow delete: if isSelf(uid) || isAdmin()
+          || exists(/databases/$(database)/documents/sessions/$(sessionId)/registrations/$(uid));
       }
     }
 

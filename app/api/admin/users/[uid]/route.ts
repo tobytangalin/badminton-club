@@ -65,6 +65,27 @@ export async function DELETE(
       }
     });
 
+    const wl = await db.collectionGroup("waitlist").where("uid", "==", uid).get();
+    const wlCountsBySession = new Map<string, number>();
+    wl.forEach((d) => {
+      const sessionId = d.ref.path.split("/")[1];
+      wlCountsBySession.set(sessionId, (wlCountsBySession.get(sessionId) ?? 0) + 1);
+      batch.delete(d.ref);
+    });
+    const wlSessionRefs = [...wlCountsBySession.keys()].map((sessionId) =>
+      db.collection("sessions").doc(sessionId)
+    );
+    const existingWlSessions = new Set(
+      wlSessionRefs.length ? (await db.getAll(...wlSessionRefs)).filter((s) => s.exists).map((s) => s.id) : []
+    );
+    wlCountsBySession.forEach((n, sessionId) => {
+      if (existingWlSessions.has(sessionId)) {
+        batch.update(db.collection("sessions").doc(sessionId), {
+          waitlistCount: FieldValue.increment(-n),
+        });
+      }
+    });
+
     batch.delete(db.collection("users").doc(uid));
     await batch.commit();
 

@@ -15,9 +15,10 @@ import {
   unregisterFromSession,
   updateSession,
   usersRef,
+  waitlistRef,
 } from "@/lib/db";
 import { useWhenVisible } from "@/lib/useWhenVisible";
-import type { Registration, SessionDoc, UserDoc } from "@/lib/types";
+import type { Registration, SessionDoc, UserDoc, WaitlistEntry } from "@/lib/types";
 
 interface SessionEntry {
   id: string;
@@ -57,6 +58,7 @@ function todayString() {
 export function AdminSessions() {
   const [sessions, setSessions] = useState<SessionEntry[] | null>(null);
   const [registrations, setRegistrations] = useState<Record<string, Registration[]>>({});
+  const [waitlists, setWaitlists] = useState<Record<string, WaitlistEntry[]>>({});
   const [users, setUsers] = useState<{ uid: string; data: UserDoc }[] | null>(null);
   const [form, setForm] = useState<FormState>(() => ({ ...emptyForm, date: todayString() }));
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -94,6 +96,19 @@ export function AdminSessions() {
     return () => unsubs.forEach((u) => u());
   }, [sessions]);
 
+  const subscribeWaitlists = useCallback(() => {
+    if (!sessions) return;
+    const unsubs = sessions.map((s) =>
+      onSnapshot(waitlistRef(s.id), (snap) => {
+        setWaitlists((prev) => ({
+          ...prev,
+          [s.id]: snap.docs.map((d) => d.data() as WaitlistEntry),
+        }));
+      })
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [sessions]);
+
   const subscribeUsers = useCallback(() => {
     const unsub = onSnapshot(usersRef(), (snap) => {
       setUsers(snap.docs.map((d) => ({ uid: d.id, data: d.data() as UserDoc })));
@@ -103,6 +118,7 @@ export function AdminSessions() {
 
   useWhenVisible(subscribeSessions);
   useWhenVisible(subscribeRegistrations);
+  useWhenVisible(subscribeWaitlists);
   useWhenVisible(subscribeUsers);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -273,6 +289,7 @@ export function AdminSessions() {
 
   function renderSession(s: SessionEntry) {
     const regs = registrations[s.id] ?? [];
+    const wl = waitlists[s.id] ?? [];
     const expanded = !!expandedPlayers[s.id];
     const shown = expanded ? regs : regs.slice(0, PREVIEW_COUNT);
     const members = (users ?? [])
@@ -298,6 +315,7 @@ export function AdminSessions() {
             <p className="text-sm text-slate-500">
               {regs.length}
               {typeof s.data.capacity === "number" ? `/${s.data.capacity}` : ""} signed up
+              {wl.length > 0 && ` · ${wl.length} on waitlist`}
             </p>
           </div>
           <div className="flex shrink-0 gap-2">
@@ -346,6 +364,23 @@ export function AdminSessions() {
           >
             {expanded ? "Show fewer" : `Show all (${regs.length})`}
           </button>
+        )}
+
+        {wl.length > 0 && (
+          <div className="mt-3 rounded-lg bg-indigo-50 p-2.5">
+            <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-indigo-700">
+              Waitlist ({wl.length})
+            </p>
+            <ul className="space-y-1">
+              {wl.map((w) => (
+                <li key={w.uid} className="flex items-center gap-2 text-sm">
+                  <Avatar src={w.photoUrl} name={w.nickname} size="sm" />
+                  <span className="flex-1">{w.nickname}</span>
+                  <span className="text-xs text-slate-500">auto-promoted on spot open</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         <div className="mt-3 border-t border-slate-100 pt-3">
