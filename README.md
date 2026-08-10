@@ -1,7 +1,9 @@
 # Social Badminton Club
 
-A badminton club management app — sessions, sign-ups, skill rankings and admin
-management — built to run entirely inside the **Google Cloud Free Tier**.
+Badminton club management app with the following features: 
+- Members can sign up (Google SSO or username/password) to book sessions and rate the badminton skills of other users. Must be approved by admin to gain access.
+- Admins can create and manage sessions, approve new members, and assign user roles
+- Built to run entirely inside the **Google Cloud Free Tier**
 
 ## Stack
 
@@ -13,19 +15,34 @@ management — built to run entirely inside the **Google Cloud Free Tier**.
 | Photos           | Cloud Storage          | 5 GB, 5k/50k ops                          |
 | Build & deploy   | Cloud Build + Artifact Registry | 2,500 min/month, 0.5 GB          |
 
-A small club (dozens of members) uses well under 1% of these limits. Avoid
-Cloud SQL (no always-free tier) — this app is NoSQL end-to-end.
+A small club (dozens of members) uses well under 1% of these limits. This app is NoSQL end-to-end to avoid
+Cloud SQL, which has no free tier.
 
 ## Pages
 
-- **Home** — public landing + CTA when signed out; when signed in: your
-  profile (nickname + photo, editable) and the session list (who's signed up,
-  slots left, day/time, location).
-- **Ranking** — rate any other player 1–5 stars; leaderboard shows average,
-  number of ratings, and your own rating per player.
-- **Admin** — approve new sign-ups, promote/demote admins, add/edit/delete
-  sessions, manage participants, delete users. Visible only to users with role
-  `admin` (default: `member`).
+- **[Home](https://badminton-club-913032121581.us-east1.run.app)** — public
+  landing + CTA when signed out; when signed in: your profile (nickname + photo,
+  editable) and the session list (who's signed up, slots left, day/time,
+  location).
+
+  ![Home signed out](docs/screenshots/home%20-%20signed%20out.png)
+  ![Home signed in](docs/screenshots/home%20-%20signed%20in.png)
+
+- **[Members](https://badminton-club-913032121581.us-east1.run.app/members)** —
+  shows all the club members. You can rate any other player's badminton skill
+  level.
+
+  ![Members](docs/screenshots/members.png)
+
+- **[Committee](https://badminton-club-913032121581.us-east1.run.app/committee)** —
+  shows the club committee members.
+
+- **[Admin](https://badminton-club-913032121581.us-east1.run.app/admin)** —
+  add/edit/delete sessions, manage participants, approve new sign-ups, assign
+  roles, delete users. Visible only to users with the admin role.
+
+  ![Admin sessions](docs/screenshots/Admin%20-%20Sessions%20tab.png)
+  ![Admin users](docs/screenshots/Admin%20-%20Users%20tab.png)
 
 ## Sign-up flow & security
 
@@ -38,7 +55,7 @@ Cloud SQL (no always-free tier) — this app is NoSQL end-to-end.
 3. An admin approves them from the **Admin → Users** tab. The Home page updates
    live the moment it happens (no refresh needed).
 
-The gating is **enforced in `firestore.rules`, not just hidden in the UI** —
+The gating is **enforced in `firestore.rules`, not just hidden in the UI**,
 no client code can bypass it:
 
 - Only Firebase-authenticated users can read data (`allow read: if signedIn()`).
@@ -51,6 +68,12 @@ no client code can bypass it:
   a pending user can't write anything.
 - The rules also enforce business rules server-side: session capacity, waitlist
   only when full, ratings 1–5 stars.
+
+## Possible features to add later
+
+- Add Sendgrid to inform users about new sessions
+- Match planning (with Elo rating based on match results)
+- Tournament mode
 
 ## Project layout
 
@@ -94,7 +117,7 @@ deploy.sh, deploy-cloudbuild.sh, deploy-rules.sh, storage-cors.json
    npm run dev                  # http://localhost:3000
    ```
 
-3. **Deploy rules** (one-time, via the Firebase CLI — `gcloud firestore rules` was
+3. **Deploy rules** (one-time, via the Firebase CLI -> `gcloud firestore rules` was
    removed from newer gcloud versions):
 
    ```bash
@@ -118,7 +141,7 @@ deploy.sh, deploy-cloudbuild.sh, deploy-rules.sh, storage-cors.json
 
 Two options:
 
-- **Cloud Build — no Docker needed (recommended here)**:
+- **Cloud Build, no Docker needed (recommended here)**:
 
   ```bash
   gcloud auth login
@@ -143,7 +166,7 @@ nothing when idle and never scales up beyond need.
 
 ## Adding new features (e.g. match results)
 
-Firestore is schema-less, so a new feature is a new collection/subcollection —
+Firestore is schema-less, so a new feature is a new collection/subcollection,
 no migrations. The `matches` subcollection is already permitted in
 `firestore.rules` (`/sessions/{sessionId}/matches/{matchId}`). A typical flow:
 
