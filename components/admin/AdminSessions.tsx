@@ -63,6 +63,7 @@ export function AdminSessions() {
   const [waitlists, setWaitlists] = useState<Record<string, WaitlistEntry[]>>({});
   const [users, setUsers] = useState<{ uid: string; data: UserDoc }[] | null>(null);
   const [form, setForm] = useState<FormState>(() => ({ ...emptyForm, date: todayString() }));
+  const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -141,7 +142,16 @@ export function AdminSessions() {
     setSavedLocations(next);
   }
 
+  function openNew() {
+    setFormOpen(true);
+    setEditingId(null);
+    setForm({ ...emptyForm, date: todayString() });
+    setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function startEdit(s: SessionEntry) {
+    setFormOpen(true);
     setEditingId(s.id);
     setForm({
       date: s.data.date,
@@ -158,12 +168,14 @@ export function AdminSessions() {
   }
 
   function cancelEdit() {
+    setFormOpen(false);
     setEditingId(null);
     setForm({ ...emptyForm, date: todayString() });
     setError("");
   }
 
   function duplicate(s: SessionEntry) {
+    setFormOpen(true);
     setEditingId(null);
     setForm({
       date: s.data.date,
@@ -492,10 +504,11 @@ export function AdminSessions() {
     <div className="space-y-6">
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <form
-        onSubmit={submit}
-        className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
-      >
+      {formOpen ? (
+        <form
+          onSubmit={submit}
+          className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+        >
         <h2 className="font-bold">{editingId ? "Edit session" : "Add session"}</h2>
         <label className="block text-sm font-medium">
           Date
@@ -641,26 +654,42 @@ export function AdminSessions() {
           >
             {busy ? "Saving…" : editingId ? "Save changes" : "Add session"}
           </button>
-          {editingId && (
-            <button
-              type="button"
-              onClick={cancelEdit}
-              className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-            >
-              Cancel
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={cancelEdit}
+            className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+          >
+            Cancel
+          </button>
         </div>
-      </form>
+        </form>
+      ) : (
+        <button
+          type="button"
+          onClick={openNew}
+          className="w-full rounded-2xl border-2 border-dashed border-teal-300 bg-teal-50 px-4 py-4 text-sm font-semibold text-teal-700 hover:bg-teal-100"
+        >
+          + New session
+        </button>
+      )}
 
       <div>
         <h2 className="mb-3 font-bold">Sessions</h2>
         {!sessions ? (
           <p className="py-8 text-center text-slate-400">Loading sessions…</p>
         ) : sessions.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500">
-            No sessions yet. Add your first one above.
-          </p>
+          <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center">
+            <p className="text-slate-500">No sessions yet.</p>
+            {!formOpen && (
+              <button
+                type="button"
+                onClick={openNew}
+                className="mt-4 rounded-xl bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700"
+              >
+                Add your first session
+              </button>
+            )}
+          </div>
         ) : (
           <div className="space-y-6">
             <section>

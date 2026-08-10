@@ -104,7 +104,10 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   `normalizeSession` maps **legacy session docs** (old `title`/`day`/`time`
   schema) onto the new fields — always normalize when mapping session snapshots,
   or `date.localeCompare` crashes on undefined.
-- **Admin sessions** (`AdminSessions`): the add form only shows date, from/to
+- **Admin sessions** (`AdminSessions`): the add form is hidden behind a
+  "+ New session" button (`formOpen` state) so the session list stays in focus;
+  "Edit"/"Copy settings" reopen the same form and scroll to top, Cancel closes
+  it. The form only shows date, from/to
   times, location, an optional description, and capacity. `cost` and
   `playersOverride` ("how many joined") appear only while editing (they can't be
   known until the session happens). The
@@ -167,7 +170,9 @@ regress these:
 - Public pages: `/` (home), `/committee`. Signed-in only: `/members`, `/admin`.
   `components/Nav.tsx` shows Members/Admin links only when signed in
   (`primaryLinks` for members+admins, `memberLinks` for guests, Admin appended
-  for admins); the mobile bottom bar renders only for signed-in users.
+  for admins); the mobile bottom bar renders only for signed-in users. Nav icons
+  are inline stroke-style SVGs (`HomeIcon`, `UsersIcon`, `LandmarkIcon`,
+  `SettingsIcon` in `Nav.tsx`) — no emoji icons.
 
 ## Code style
 
