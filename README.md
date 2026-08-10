@@ -20,7 +20,7 @@ Cloud SQL, which has no free tier.
 
 ## Pages
 
-- **Home** —> public
+- **Home**: public
   landing + CTA when signed out; when signed in: your profile (nickname + photo,
   editable) and the session list (who's signed up, slots left, day/time,
   location).
@@ -28,16 +28,16 @@ Cloud SQL, which has no free tier.
   ![Home signed out](docs/screenshots/home%20-%20signed%20out.png)
   ![Home signed in](docs/screenshots/home%20-%20signed%20in.png)
 
-- **Members** —>
+- **Members**:
   shows all the club members. You can rate any other player's badminton skill
   level.
 
   ![Members](docs/screenshots/members.png)
 
-- **Committee** —>
+- **Committee**:
   shows the club committee members.
 
-- **Admin** —>
+- **Admin**:
   add/edit/delete sessions, manage participants, approve new sign-ups, assign
   roles, delete users. Visible only to users with the admin role.
 
