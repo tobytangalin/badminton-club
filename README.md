@@ -20,7 +20,7 @@ Cloud SQL, which has no free tier.
 
 ## Pages
 
-- **[Home](https://badminton-club-913032121581.us-east1.run.app)** — public
+- **Home** —> public
   landing + CTA when signed out; when signed in: your profile (nickname + photo,
   editable) and the session list (who's signed up, slots left, day/time,
   location).
@@ -28,16 +28,16 @@ Cloud SQL, which has no free tier.
   ![Home signed out](docs/screenshots/home%20-%20signed%20out.png)
   ![Home signed in](docs/screenshots/home%20-%20signed%20in.png)
 
-- **[Members](https://badminton-club-913032121581.us-east1.run.app/members)** —
+- **Members** —>
   shows all the club members. You can rate any other player's badminton skill
   level.
 
   ![Members](docs/screenshots/members.png)
 
-- **[Committee](https://badminton-club-913032121581.us-east1.run.app/committee)** —
+- **Committee** —>
   shows the club committee members.
 
-- **[Admin](https://badminton-club-913032121581.us-east1.run.app/admin)** —
+- **Admin** —>
   add/edit/delete sessions, manage participants, approve new sign-ups, assign
   roles, delete users. Visible only to users with the admin role.
 
