@@ -6,6 +6,9 @@ export interface UserDoc {
   photoUrl?: string;
   role: Role;
   provider?: string;
+  /** Whether an admin has approved this membership. New accounts start false;
+   *  absent on legacy docs is treated as approved. */
+  approved?: boolean;
   createdAt?: unknown;
 }
 
@@ -17,6 +20,8 @@ export interface SessionDoc {
   /** 24-hour `HH:MM`. */
   endTime: string;
   location: string;
+  /** Optional note shown to members (e.g. "Tournament night — doubles"). */
+  description?: string;
   /** Optional max players; null/absent means no limit. */
   capacity?: number | null;
   count: number;

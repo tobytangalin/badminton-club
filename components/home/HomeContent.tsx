@@ -8,7 +8,7 @@ import { ProfileCard } from "@/components/home/ProfileCard";
 import { SessionsView } from "@/components/home/SessionsView";
 
 export function HomeContent() {
-  const { user, loading, configured } = useAuth();
+  const { user, isApproved, loading, configured } = useAuth();
 
   if (!configured) {
     return (
@@ -22,11 +22,32 @@ export function HomeContent() {
 
   if (!user) return <PublicLanding />;
 
+  if (!isApproved) {
+    return (
+      <div className="space-y-6">
+        <ProfileCard />
+        <PendingApproval />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <ProfileCard />
       <SessionsView />
     </div>
+  );
+}
+
+function PendingApproval() {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-6 text-center">
+      <h2 className="text-lg font-semibold text-slate-900">Membership pending approval</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm text-slate-600">
+        Your request is with the club admins. Once they approve your account,
+        you&apos;ll be able to see sessions and register your spot.
+      </p>
+    </section>
   );
 }
 

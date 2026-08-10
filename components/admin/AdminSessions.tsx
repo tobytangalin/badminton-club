@@ -30,6 +30,7 @@ interface FormState {
   startTime: string;
   endTime: string;
   location: string;
+  description: string;
   capacity: string;
   cost: string;
   playersOverride: string;
@@ -40,6 +41,7 @@ const emptyForm: FormState = {
   startTime: "19:00",
   endTime: "21:00",
   location: "",
+  description: "",
   capacity: "",
   cost: "",
   playersOverride: "",
@@ -146,6 +148,7 @@ export function AdminSessions() {
       startTime: s.data.startTime,
       endTime: s.data.endTime,
       location: s.data.location,
+      description: s.data.description ?? "",
       capacity: s.data.capacity ? String(s.data.capacity) : "",
       cost: s.data.cost ? String(s.data.cost) : "",
       playersOverride: s.data.playersOverride ? String(s.data.playersOverride) : "",
@@ -167,6 +170,7 @@ export function AdminSessions() {
       startTime: s.data.startTime,
       endTime: s.data.endTime,
       location: s.data.location,
+      description: s.data.description ?? "",
       capacity: s.data.capacity ? String(s.data.capacity) : "",
       cost: "",
       playersOverride: "",
@@ -218,6 +222,9 @@ export function AdminSessions() {
         cost: Number.isFinite(cost) && cost > 0 ? cost : null,
         playersOverride: override,
       };
+      if (form.description.trim()) {
+        payload.description = form.description.trim();
+      }
       if (editingId) {
         await updateSession(editingId, payload);
       } else {
@@ -312,6 +319,9 @@ export function AdminSessions() {
               {s.data.location} - {formatSessionDate(s.data.date)}
             </p>
             <p className="text-sm text-slate-600">{s.data.startTime}–{s.data.endTime}</p>
+            {s.data.description && (
+              <p className="text-sm text-slate-500">{s.data.description}</p>
+            )}
             <p className="text-sm text-slate-500">
               {regs.length}
               {typeof s.data.capacity === "number" ? `/${s.data.capacity}` : ""} signed up
@@ -568,6 +578,17 @@ export function AdminSessions() {
               ))}
             </div>
           )}
+        </label>
+        <label className="block text-sm font-medium">
+          Description
+          <textarea
+            rows={3}
+            maxLength={500}
+            value={form.description}
+            onChange={(e) => set("description", e.target.value)}
+            placeholder="e.g. Tournament night — doubles, bring your own racket (optional)"
+            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+          />
         </label>
         <label className="block text-sm font-medium">
           Capacity

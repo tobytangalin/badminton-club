@@ -35,7 +35,14 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
 ## Architecture at a glance
 
 - **Auth**: Firebase Auth (Google SSO + email/password). `components/AuthProvider.tsx`
-  exposes `user`, `userData`, `loading`, `isAdmin`, `needsProfile`. The `/login`
+  exposes `user`, `userData`, `loading`, `isAdmin`, `isApproved`, `needsProfile`.
+  New accounts are **pending approval** until an admin approves them (`users/{uid}`
+  `approved: false`; legacy docs without the field count as approved). Pending
+  users see a waiting card on Home instead of sessions, are redirected off
+  `/members`, and are blocked by `firestore.rules` (registrations, waitlist,
+  ratings, self-update can't flip `approved`). Admins approve via `AdminUsers`
+  (Approve button); the Home page updates live because `AuthProvider` subscribes
+  to the user doc. The `/login`
   page has an inline password-reset flow (`sendPasswordResetEmail`) that shows a
   generic success message to avoid account enumeration.
 - **Most data ops are CLIENT-SIDE** with enforcement in `firestore.rules`
@@ -55,11 +62,13 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
 - **Lazy SDK init**: `lib/firebase.ts` never initializes at module top-level; call
   `getFirebaseApp()`/`getDb()` inside hooks/handlers so `next build` prerendering works.
 - **Firestore collections** (`lib/types.ts`):
-  - `users/{uid}` — `nickname`, `photoUrl`, `role` (`member`|`admin`), `email`
+  - `users/{uid}` — `nickname`, `photoUrl`, `role` (`member`|`admin`), `email`,
+    `approved` (optional; absent/true = approved, new accounts start `false`)
   - `sessions/{id}` — `date` (ISO `YYYY-MM-DD`), `startTime`, `endTime`,
     `location`, `capacity` (optional; null/absent = no limit), `count`,
     `waitlistCount` (optional; 0 when absent), `cost` (total, optional),
-    `playersOverride` (optional, overrides player count for cost splitting);
+    `playersOverride` (optional, overrides player count for cost splitting),
+    `description` (optional, shown to members, max 500 chars);
     `sessions/{id}/registrations/{uid}` and
     `sessions/{id}/waitlist/{uid}` subcollections
   - `ratings/{ratedUid}_{raterUid}` — `stars` 1–5
@@ -77,7 +86,12 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   their registration, decrements both counts) — no polling, no manual admin step.
   Waitlisted users see their queue position and can leave; `adminAddRegistration`
   clears a stale waitlist doc if an admin adds someone directly. Sessions store
-  `waitlistCount: 0` at creation.
+  `waitlistCount: 0` at creation. **Rules gotcha**: `request.resource.data` for an
+  update is the FULL merged post-update document, not just the written fields — so
+  the sessions `allow update` (`isMemberSessionUpdate`) compares `count`/`waitlistCount`
+  deltas against `resource.data` via absent-aware `countOf`/`waitlistCountOf` helpers.
+  Never use `!('field' in request.resource.data)` to detect "field not written" in an
+  update rule.
 - **Costs**: `lib/payments.ts` — `perPlayerCost = cost / (playersOverride ?? count)`;
   currency is `NEXT_PUBLIC_CURRENCY` (default `DKK`).
 - **Dates**: sessions store ISO `date` + 24h `startTime`/`endTime`.
@@ -87,8 +101,9 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   schema) onto the new fields — always normalize when mapping session snapshots,
   or `date.localeCompare` crashes on undefined.
 - **Admin sessions** (`AdminSessions`): the add form only shows date, from/to
-  times, location and capacity. `cost` and `playersOverride` ("how many joined")
-  appear only while editing (they can't be known until the session happens). The
+  times, location, an optional description, and capacity. `cost` and
+  `playersOverride` ("how many joined") appear only while editing (they can't be
+  known until the session happens). The
   list is split into Upcoming and a collapsible Past section; `AdminPanel`
   defaults to the Sessions tab. Each session's player list is capped at 8 with a
   "Show all" toggle; "Manage participants" opens a searchable checkbox picker

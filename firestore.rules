@@ -15,6 +15,17 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    // Legacy user docs (created before approval existed) have no `approved`
+    // field and are treated as approved.
+    function approvedOf(doc) {
+      return !('approved' in doc.data) || doc.data.approved == true;
+    }
+
+    function isApproved() {
+      return signedIn()
+        && approvedOf(get(/databases/$(database)/documents/users/$(request.auth.uid)));
+    }
+
     function validStars(stars) {
       return stars is int && stars >= 1 && stars <= 5;
     }
@@ -27,8 +38,11 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if isSelf(uid)
         && request.resource.data.role == 'member'
+        && request.resource.data.approved == false
         && request.resource.data.nickname is string;
-      allow update: if (isSelf(uid) && request.resource.data.role == resource.data.role)
+      allow update: if (isSelf(uid)
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.approved == resource.data.approved)
         || isAdmin();
       allow delete: if isAdmin();
     }
@@ -39,22 +53,12 @@ service cloud.firestore {
     // (+1 / -1) as part of a register/unregister/waitlist transaction
     // against the subcollections below.
     match /sessions/{sessionId} {
+      function countOf(doc) {
+        return 'count' in doc.data ? doc.data.count : 0;
+      }
+
       function waitlistCountOf(doc) {
         return 'waitlistCount' in doc.data ? doc.data.waitlistCount : 0;
-      }
-
-      function isSessionCountChange() {
-        return signedIn()
-          && (!('count' in request.resource.data)
-            || request.resource.data.count == resource.data.count + 1
-            || request.resource.data.count == resource.data.count - 1);
-      }
-
-      function isWaitlistCountChange() {
-        return signedIn()
-          && (!('waitlistCount' in request.resource.data)
-            || request.resource.data.waitlistCount == waitlistCountOf(resource) + 1
-            || request.resource.data.waitlistCount == waitlistCountOf(resource) - 1);
       }
 
       function isSessionFull() {
@@ -64,32 +68,60 @@ service cloud.firestore {
             >= get(/databases/$(database)/documents/sessions/$(sessionId)).data.capacity;
       }
 
+      // Members may only nudge the denormalized count/waitlistCount counters to
+      // match a register/unregister/waitlist write in the subcollections.
+      // `request.resource.data` is the FULL merged document for updates, so
+      // deltas are compared against `resource.data` rather than checking which
+      // fields were written.
+      function isMemberSessionUpdate() {
+        return signedIn()
+          && (
+            // register (+1)
+            (countOf(request.resource) == countOf(resource) + 1
+              && waitlistCountOf(request.resource) == waitlistCountOf(resource))
+            // unregister (-1)
+            || (countOf(request.resource) == countOf(resource) - 1
+              && waitlistCountOf(request.resource) == waitlistCountOf(resource))
+            // unregister with waitlist auto-promotion (-1, -1)
+            || (countOf(request.resource) == countOf(resource) - 1
+              && waitlistCountOf(request.resource) == waitlistCountOf(resource) - 1)
+            // join waitlist (+1 waitlist)
+            || (countOf(request.resource) == countOf(resource)
+              && waitlistCountOf(request.resource) == waitlistCountOf(resource) + 1)
+            // leave waitlist (-1 waitlist)
+            || (countOf(request.resource) == countOf(resource)
+              && waitlistCountOf(request.resource) == waitlistCountOf(resource) - 1)
+          );
+      }
+
       allow read: if signedIn();
       allow create: if isAdmin();
-      allow update: if isAdmin() || (isSessionCountChange() && isWaitlistCountChange());
+      allow update: if isAdmin() || isMemberSessionUpdate();
       allow delete: if isAdmin();
 
       match /registrations/{uid} {
         allow read: if signedIn();
         // A member may be added automatically when they are first on a
         // session's waitlist and a spot frees up (auto-promotion).
-        allow create: if (isSelf(uid) || isAdmin()
-          || exists(/databases/$(database)/documents/sessions/$(sessionId)/waitlist/$(uid)))
+        allow create: if isApproved()
+          && (isSelf(uid) || isAdmin()
+            || exists(/databases/$(database)/documents/sessions/$(sessionId)/waitlist/$(uid)))
           && !exists(/databases/$(database)/documents/sessions/$(sessionId)/registrations/$(uid));
         allow update: if false;
-        allow delete: if isSelf(uid) || isAdmin();
+        allow delete: if (isSelf(uid) && isApproved()) || isAdmin();
       }
 
       match /waitlist/{uid} {
         allow read: if signedIn();
         // Only join a waitlist when the session is actually full.
-        allow create: if (isSelf(uid) || isAdmin())
+        allow create: if isApproved()
+          && (isSelf(uid) || isAdmin())
           && !exists(/databases/$(database)/documents/sessions/$(sessionId)/waitlist/$(uid))
           && isSessionFull();
         allow update: if false;
         // The delete may be part of the auto-promotion transaction, where
         // the same user is simultaneously written to the registrations.
-        allow delete: if isSelf(uid) || isAdmin()
+        allow delete: if (isSelf(uid) && isApproved()) || isAdmin()
           || exists(/databases/$(database)/documents/sessions/$(sessionId)/registrations/$(uid));
       }
     }
@@ -100,14 +132,14 @@ service cloud.firestore {
     // Members may also rate themselves.
     match /ratings/{id} {
       allow read: if signedIn();
-      allow create: if signedIn()
+      allow create: if isApproved()
         && request.resource.data.raterUid == request.auth.uid
         && validStars(request.resource.data.stars);
-      allow update: if signedIn()
+      allow update: if isApproved()
         && resource.data.raterUid == request.auth.uid
         && request.resource.data.ratedUid == resource.data.ratedUid
         && validStars(request.resource.data.stars);
-      allow delete: if signedIn() && resource.data.raterUid == request.auth.uid;
+      allow delete: if isApproved() && resource.data.raterUid == request.auth.uid;
     }
 
     // Matches (future feature: record match results) -------------------

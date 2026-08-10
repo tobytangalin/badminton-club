@@ -21,6 +21,7 @@ interface AuthContextValue {
   loading: boolean;
   configured: boolean;
   isAdmin: boolean;
+  isApproved: boolean;
   needsProfile: boolean;
   signOut: () => Promise<void>;
 }
@@ -80,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useSignOut();
 
   const isAdmin = userData?.role === "admin";
+  const isApproved = userData ? (userData.approved ?? true) : false;
   const needsProfile = Boolean(user && userData && !userData.nickname);
 
   return (
@@ -90,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         configured: isFirebaseConfigured,
         isAdmin,
+        isApproved,
         needsProfile,
         signOut,
       }}

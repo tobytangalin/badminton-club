@@ -51,7 +51,9 @@ export async function POST() {
   }
 
   const batch = db.batch();
-  users.forEach((user) => batch.update(user.ref, { role: "admin" }));
+  users.forEach((user) =>
+    batch.update(user.ref, { role: "admin", approved: true })
+  );
   await batch.commit();
 
   return json({ ok: true, promoted: users.docs.map((d) => d.id) });

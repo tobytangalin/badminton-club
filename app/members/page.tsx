@@ -8,13 +8,14 @@ import { SetupNotice } from "@/components/SetupNotice";
 import { MembersClient } from "@/components/members/MembersClient";
 
 export default function MembersPage() {
-  const { user, loading, configured } = useAuth();
+  const { user, isApproved, loading, configured } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!configured || loading) return;
     if (!user) router.replace("/login");
-  }, [configured, loading, user, router]);
+    else if (!isApproved) router.replace("/");
+  }, [configured, loading, user, isApproved, router]);
 
   if (!configured) {
     return (

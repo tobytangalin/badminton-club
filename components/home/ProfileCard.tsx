@@ -9,7 +9,7 @@ import { resizeAvatar } from "@/lib/image";
 import { cn } from "@/lib/cn";
 
 export function ProfileCard() {
-  const { user, userData, needsProfile, signOut } = useAuth();
+  const { user, userData, isApproved, needsProfile, signOut } = useAuth();
   const router = useRouter();
   const [editing, setEditing] = useState(needsProfile);
   const [nickname, setNickname] = useState(userData?.nickname ?? "");
@@ -134,6 +134,11 @@ export function ProfileCard() {
           {needsProfile && (
             <p className="mb-1 text-sm font-medium text-amber-800">
               Choose a nickname to register for sessions.
+            </p>
+          )}
+          {!needsProfile && !isApproved && (
+            <p className="mb-1 text-sm font-medium text-amber-800">
+              Membership pending approval. A club admin will approve your request soon.
             </p>
           )}
           {editing ? (

@@ -67,6 +67,7 @@ export async function ensureUserDoc(
     await setDoc(ref, {
       nickname: "",
       role: "member",
+      approved: false,
       ...data,
       createdAt: serverTimestamp(),
     });
@@ -288,11 +289,13 @@ export async function fetchLeaderboard(
     getDocs(collection(db, "ratings")),
   ]);
 
-  const users = usersSnap.docs.map((d) => ({
-    uid: d.id,
-    nickname: (d.data().nickname as string) ?? "",
-    photoUrl: (d.data().photoUrl as string) ?? undefined,
-  }));
+  const users = usersSnap.docs
+    .filter((d) => d.data().approved ?? true)
+    .map((d) => ({
+      uid: d.id,
+      nickname: (d.data().nickname as string) ?? "",
+      photoUrl: (d.data().photoUrl as string) ?? undefined,
+    }));
 
   const byRated = new Map<string, number[]>();
   const myStars = new Map<string, number>();
@@ -358,6 +361,10 @@ export async function deleteSession(id: string): Promise<void> {
 
 export async function setUserRole(uid: string, role: "member" | "admin"): Promise<void> {
   await updateDoc(userDoc(uid), { role });
+}
+
+export async function setUserApproved(uid: string, approved: boolean): Promise<void> {
+  await updateDoc(userDoc(uid), { approved });
 }
 
 /** Permanently delete a user (account, profile, ratings, registrations) via the admin API. */

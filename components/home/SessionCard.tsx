@@ -109,6 +109,12 @@ export function SessionCard({
         )}
       </div>
 
+      {session.description && (
+        <p className="mt-3 whitespace-pre-line text-sm text-slate-600">
+          {session.description}
+        </p>
+      )}
+
       {perPlayer !== null && (
         <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <span className="font-semibold text-slate-800">
@@ -182,7 +188,7 @@ export function SessionCard({
           <p className="mb-2 text-sm font-medium text-indigo-700">
             {isFull
               ? `You're #${waitlistPosition || "?"} on the waitlist. You'll be moved in automatically if a spot opens.`
-              : "A spot just opened — claim it now!"}
+              : "A spot just opened, claim it now!"}
           </p>
         )}
         <button
