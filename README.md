@@ -23,8 +23,34 @@ Cloud SQL (no always-free tier) — this app is NoSQL end-to-end.
   slots left, day/time, location).
 - **Ranking** — rate any other player 1–5 stars; leaderboard shows average,
   number of ratings, and your own rating per player.
-- **Admin** — promote/demote admins, add/edit/delete sessions, remove players
-  from a session. Visible only to users with role `admin` (default: `member`).
+- **Admin** — approve new sign-ups, promote/demote admins, add/edit/delete
+  sessions, manage participants, delete users. Visible only to users with role
+  `admin` (default: `member`).
+
+## Sign-up flow & security
+
+1. A visitor signs in with **Google SSO or email/password** (Firebase Auth).
+   On first sign-in, a `users/{uid}` doc is created automatically with role
+   `member` and `approved: false`.
+2. The new account is **pending approval**: they see a "waiting for approval"
+   card instead of sessions, can't open the Members page, and can't register,
+   join a waitlist, or rate anyone.
+3. An admin approves them from the **Admin → Users** tab. The Home page updates
+   live the moment it happens (no refresh needed).
+
+The gating is **enforced in `firestore.rules`, not just hidden in the UI** —
+no client code can bypass it:
+
+- Only Firebase-authenticated users can read data (`allow read: if signedIn()`).
+- Users can only create/update their **own** profile doc, and an update may
+  never change `role` or `approved` (`firestore.rules:37-47`). Self-promotion or
+  self-approval is rejected by the server, even with a tampered client.
+- Only admins (`users/{uid}.role == 'admin'`, verified in the rules) can approve
+  users, manage sessions, and delete accounts.
+- Registrations, waitlists and ratings additionally require `isApproved()`, so
+  a pending user can't write anything.
+- The rules also enforce business rules server-side: session capacity, waitlist
+  only when full, ratings 1–5 stars.
 
 ## Project layout
 
@@ -37,7 +63,7 @@ app/
   manifest.ts               PWA manifest
   api/
     bootstrap/              Promote the first admin (server-only)
-    sessions/...            Optional REST-ish admin API (future native app seam)
+    admin/users/[uid]/...   Admin REST-ish API (delete a user, future native app seam)
 components/
   AuthProvider.tsx          Auth + user profile state
   home/ ...                 Profile card, session list/card
@@ -49,7 +75,8 @@ lib/
   db.ts                     Firestore/storage helpers + transactions
 firestore.rules             Data access rules (roles enforced here)
 storage.rules               Profile photo rules
-Dockerfile, cloudbuild.yaml, deploy.sh
+Dockerfile, cloudbuild.yaml, cloudbuild.push.yaml,
+deploy.sh, deploy-cloudbuild.sh, deploy-rules.sh, storage-cors.json
 ```
 
 ## Getting started
