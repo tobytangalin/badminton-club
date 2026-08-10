@@ -42,7 +42,11 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   `/members`, and are blocked by `firestore.rules` (registrations, waitlist,
   ratings, self-update can't flip `approved`). Admins approve via `AdminUsers`
   (Approve button); the Home page updates live because `AuthProvider` subscribes
-  to the user doc. The `/login`
+  to the user doc. Admins see a "N members awaiting approval" banner on Home
+  (`PendingUsersBanner` in `HomeContent`) — it's a **one-shot `getDocs` query**
+  (`where approved == false`, re-run on tab focus via `useWhenVisible`), NOT a
+  listener, so it only reads pending docs; it links to `/admin?tab=users`, which
+  `AdminPanel` reads to open the Users tab. The `/login`
   page has an inline password-reset flow (`sendPasswordResetEmail`) that shows a
   generic success message to avoid account enumeration.
 - **Most data ops are CLIENT-SIDE** with enforcement in `firestore.rules`

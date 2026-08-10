@@ -1,14 +1,18 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import Link from "next/link";
+import { getDocs, query, where } from "firebase/firestore";
 import { useAuth } from "@/components/AuthProvider";
 import { Spinner } from "@/components/Spinner";
 import { SetupNotice } from "@/components/SetupNotice";
 import { ProfileCard } from "@/components/home/ProfileCard";
 import { SessionsView } from "@/components/home/SessionsView";
+import { usersRef } from "@/lib/db";
+import { useWhenVisible } from "@/lib/useWhenVisible";
 
 export function HomeContent() {
-  const { user, isApproved, loading, configured } = useAuth();
+  const { user, isApproved, isAdmin, loading, configured } = useAuth();
 
   if (!configured) {
     return (
@@ -34,8 +38,45 @@ export function HomeContent() {
   return (
     <div className="space-y-6">
       <ProfileCard />
+      {isAdmin && <PendingUsersBanner />}
       <SessionsView />
     </div>
+  );
+}
+
+function PendingUsersBanner() {
+  const [pending, setPending] = useState(0);
+
+  // One-shot query (no listener): only reads docs with `approved: false`.
+  // Re-fetched when the tab becomes visible again via useWhenVisible.
+  const refresh = useCallback(() => {
+    let cancelled = false;
+    void getDocs(query(usersRef(), where("approved", "==", false)))
+      .then((snap) => {
+        if (!cancelled) setPending(snap.docs.length);
+      })
+      .catch(() => {
+        if (!cancelled) setPending(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useWhenVisible(refresh);
+
+  if (pending === 0) return null;
+
+  return (
+    <Link
+      href="/admin?tab=users"
+      className="block rounded-2xl border border-amber-200 bg-amber-50 p-4 transition-colors hover:bg-amber-100"
+    >
+      <p className="font-semibold text-amber-800">
+        {pending} member{pending === 1 ? "" : "s"} awaiting approval
+      </p>
+      <p className="mt-0.5 text-sm font-medium text-amber-700">Review →</p>
+    </Link>
   );
 }
 

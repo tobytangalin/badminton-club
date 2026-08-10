@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AdminSessions } from "@/components/admin/AdminSessions";
 import { AdminUsers } from "@/components/admin/AdminUsers";
 import { cn } from "@/lib/cn";
@@ -9,6 +9,15 @@ type Tab = "users" | "sessions";
 
 export function AdminPanel({ uid }: { uid: string }) {
   const [tab, setTab] = useState<Tab>("sessions");
+
+  // The admin Home banner links to /admin?tab=users. setState is deferred into
+  // a microtask because react-hooks/set-state-in-effect forbids sync setState.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    if (requested === "users") {
+      void Promise.resolve().then(() => setTab("users"));
+    }
+  }, []);
 
   return (
     <section>
