@@ -534,7 +534,6 @@ export function AdminSessions() {
               type="text"
               value={form.location}
               onChange={(e) => set("location", e.target.value)}
-              placeholder="e.g. City Sports Hall, Court 2"
               list="saved-locations"
               className="w-full rounded-xl border border-slate-300 px-3 py-2"
             />
@@ -586,7 +585,7 @@ export function AdminSessions() {
             maxLength={500}
             value={form.description}
             onChange={(e) => set("description", e.target.value)}
-            placeholder="e.g. Tournament night — doubles, bring your own racket (optional)"
+            placeholder="Optional"
             className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
           />
         </label>

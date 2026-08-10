@@ -99,7 +99,7 @@ export function AdminUsers({ currentUid }: { currentUid: string }) {
           return (
             <li
               key={u.uid}
-              className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3"
+              className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3"
             >
               <Avatar src={u.data.photoUrl} name={u.data.nickname} size="sm" />
               <div className="min-w-0 flex-1">
@@ -121,7 +121,7 @@ export function AdminUsers({ currentUid }: { currentUid: string }) {
                 {isAdmin ? "admin" : isPending ? "pending" : "member"}
               </span>
               {!isSelf && (
-                <div className="flex shrink-0 gap-2">
+                <div className="flex w-full shrink-0 justify-end gap-2 sm:w-auto">
                   {isPending ? (
                     <button
                       type="button"
