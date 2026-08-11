@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { getDocs, onSnapshot } from "firebase/firestore";
+import { getDocs, onSnapshot, query, where } from "firebase/firestore";
 import { useAuth } from "@/components/AuthProvider";
 import { SessionCard } from "@/components/home/SessionCard";
 import { Spinner } from "@/components/Spinner";
 import { useWhenVisible } from "@/lib/useWhenVisible";
-import { isSessionEnded, normalizeSession } from "@/lib/date";
+import { isSessionEnded, normalizeSession, todayISODate } from "@/lib/date";
 import { sessionsRef, registrationsRef, waitlistRef } from "@/lib/db";
 import type { Registration, SessionDoc, WaitlistEntry } from "@/lib/types";
 
@@ -21,10 +21,13 @@ export function SessionsView() {
   const [registrations, setRegistrations] = useState<Record<string, Registration[]>>({});
   const [waitlists, setWaitlists] = useState<Record<string, WaitlistEntry[]>>({});
   const countsRef = useRef<Record<string, string>>({});
+  const loadedRegsRef = useRef<Set<string>>(new Set());
+  const loadedWlRef = useRef<Set<string>>(new Set());
 
   const loadRegistrations = useCallback(async (ids: string[]) => {
     try {
       const results = await Promise.all(ids.map((id) => getDocs(registrationsRef(id))));
+      loadedRegsRef.current = new Set([...loadedRegsRef.current, ...ids]);
       setRegistrations((prev) => {
         const nextReg = { ...prev };
         results.forEach((snap, i) => {
@@ -40,6 +43,7 @@ export function SessionsView() {
   const loadWaitlists = useCallback(async (ids: string[]) => {
     try {
       const results = await Promise.all(ids.map((id) => getDocs(waitlistRef(id))));
+      loadedWlRef.current = new Set([...loadedWlRef.current, ...ids]);
       setWaitlists((prev) => {
         const nextWl = { ...prev };
         results.forEach((snap, i) => {
@@ -53,9 +57,8 @@ export function SessionsView() {
   }, []);
 
   const subscribe = useCallback(() => {
-    countsRef.current = {};
     const unsub = onSnapshot(
-      sessionsRef(),
+      query(sessionsRef(), where("date", ">=", todayISODate())),
       (snap) => {
         const next = snap.docs.map((d) => ({
           id: d.id,
@@ -68,15 +71,24 @@ export function SessionsView() {
         const changedWl: string[] = [];
         for (const { id, data } of next) {
           seen.add(id);
+          if (isSessionEnded(data)) continue;
           const [prevCount, prevWl] = countsRef.current[id]?.split("|") ?? [undefined, undefined];
           const count = String(data.count);
           const wl = String(data.waitlistCount ?? 0);
-          if (prevCount !== count) changedRegs.push(id);
-          if (prevWl !== wl) changedWl.push(id);
+          if (prevCount !== count || !loadedRegsRef.current.has(id)) changedRegs.push(id);
+          if (prevWl !== wl || !loadedWlRef.current.has(id)) changedWl.push(id);
         }
 
         const removed = Object.keys(countsRef.current).filter((id) => !seen.has(id));
         if (removed.length > 0) {
+          const nextLoadedRegs = new Set(loadedRegsRef.current);
+          const nextLoadedWl = new Set(loadedWlRef.current);
+          removed.forEach((id) => {
+            nextLoadedRegs.delete(id);
+            nextLoadedWl.delete(id);
+          });
+          loadedRegsRef.current = nextLoadedRegs;
+          loadedWlRef.current = nextLoadedWl;
           setRegistrations((prev) => {
             const nextReg = { ...prev };
             removed.forEach((id) => delete nextReg[id]);

@@ -80,7 +80,8 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
 - **Registration** uses a client `runTransaction` (write registration + `increment`
   session `count`) with rules checking capacity. Admins can also add/remove members
   from a session via the "Manage participants" checkbox picker in `AdminSessions`
-  (`adminAddRegistration` in `lib/db.ts`); this bypasses capacity so a session can
+  (`adminApplyParticipantChanges` in `lib/db.ts`, ONE atomic transaction for the
+  whole add/remove set); this bypasses capacity so a session can
   be overfull. Registration create in `firestore.rules` allows `isAdmin() || isSelf(uid)`.
 - **Waitlist**: when a capped session is full, `SessionCard` offers "Join waitlist"
   (`joinWaitlist` in `lib/db.ts` writes a `waitlist` subcollection doc + `increment`
@@ -88,8 +89,9 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   unregister, `unregisterFromSession` **auto-promotes** the oldest waitlisted member
   into the freed spot in the same transaction (deletes their waitlist doc, writes
   their registration, decrements both counts) — no polling, no manual admin step.
-  Waitlisted users see their queue position and can leave; `adminAddRegistration`
-  clears a stale waitlist doc if an admin adds someone directly. Sessions store
+  Waitlisted users see their queue position and can leave;
+  `adminApplyParticipantChanges` clears a stale waitlist doc if an admin adds
+  someone directly. Sessions store
   `waitlistCount: 0` at creation. **Rules gotcha**: `request.resource.data` for an
   update is the FULL merged post-update document, not just the written fields — so
   the sessions `allow update` (`isMemberSessionUpdate`) compares `count`/`waitlistCount`
@@ -112,9 +114,13 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   `playersOverride` ("how many joined") appear only while editing (they can't be
   known until the session happens). The
   list is split into Upcoming and a collapsible Past section; `AdminPanel`
-  defaults to the Sessions tab. Each session's player list is capped at 8 with a
-  "Show all" toggle; "Manage participants" opens a searchable checkbox picker
-  (add/remove in bulk, applies via `adminAddRegistration`/`unregisterFromSession`).
+  defaults to the Sessions tab. The sessions query is capped to the last
+  `PAST_WINDOW_DAYS` (60) so older docs are never fetched (records stay in
+  Firestore); past sessions' registrations/waitlists are only loaded when the
+  Past section is expanded (`showPastRef` + `loadPastDetails`), and the Home
+  sessions listener only queries upcoming. Each session's player list is capped
+  at 8 with a "Show all" toggle; "Manage participants" opens a searchable
+  checkbox picker (add/remove in bulk, applies via `adminApplyParticipantChanges`).
   "Copy settings" pre-fills the Add form with a session's date/times/location/
   capacity (cost and playersOverride stay empty) to create a new session. The
   form validates: new sessions can't be dated in the past (date `min` + submit
@@ -133,16 +139,29 @@ regress these:
   it (pass a `useCallback`'d subscribe function; it resubscribes on visibility).
 - **Leaderboard** (`MembersClient` + `fetchLeaderboard`): data is cached 60s per
   rater in `lib/db.ts` (`LEADERBOARD_TTL_MS`). Rating a player recomputes that
-  row locally (`applyRating`) and calls `invalidateLeaderboardCache()` — there is
+  row locally (`applyRating`) and calls `invalidateLeaderboardCache(raterUid)` —
+  scoped to that rater's cache entry so other raters stay warm (no-arg still
+  clears all) — there is
   **no refetch after rating and no polling** (polling would blow the read budget).
   The Members page renders as cards on mobile and a `table-fixed` table on
   desktop — keep it that way so the page **never shows a horizontal scrollbar**.
   Mobile shows Name / Power level sort pills in the list header (shared sort
   state with the desktop table).
-- **Session registrations** (`SessionsView`): ONE live `onSnapshot` on `sessions`;
-  a session's registrations are fetched once with `getDocs` only when its `count`
-  changes (tracked via `countsRef`), and its waitlist members only when
-  `waitlistCount` changes. Avoid adding a per-session listener loop.
+- **Session registrations** (`SessionsView` + `AdminSessions`): ONE live
+  `onSnapshot` on `sessions`; a session's registrations are fetched once with
+  `getDocs` only when its `count` changes, and its waitlist members only when
+  `waitlistCount` changes — tracked via `countsRef` + `loadedRegsRef`/
+  `loadedWlRef` (loaded-set retries after a failed first fetch). `countsRef` is
+  NOT reset on `useWhenVisible` resubscribe, so tab-focus only re-reads sessions
+  whose counts actually changed. Avoid adding a per-session listener loop (the
+  old AdminSessions per-session `registrations`/`waitlist` listeners were
+  removed). Home's sessions query filters to `date >= today` (`todayISODate`);
+  admin's is capped to `PAST_WINDOW_DAYS`.
+- **Firestore transactions** (`lib/db.ts`): ALL reads must complete before ANY
+  write in a `runTransaction` — never `tx.get` after a `tx.set`/`tx.update`/
+  `tx.delete` (the SDK throws "transactions require all reads to be executed
+  before all writes"). `adminApplyParticipantChanges` and
+  `unregisterFromSession` batch their reads up front with `Promise.all`.
 - Reads/writes are already batched and denormalized (registration embeds
   nickname/photoUrl so users aren't re-read on Home).
 - **Public images** (homepage hero, logo, committee photos) live in Firebase

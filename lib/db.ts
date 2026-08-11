@@ -119,34 +119,121 @@ export async function registerForSession(
   });
 }
 
-export async function adminAddRegistration(
+export interface ParticipantToAdd {
+  uid: string;
+  nickname: string;
+  photoUrl?: string;
+}
+
+export interface ParticipantChanges {
+  add: ParticipantToAdd[];
+  remove: string[];
+}
+
+/**
+ * Bulk admin add/remove of session participants in ONE transaction.
+ * Adds write registrations (clearing any stale waitlist doc), removes delete
+ * registrations and auto-promote the oldest waitlisted members into freed
+ * spots. Atomic: any failure rolls the whole save back.
+ */
+export async function adminApplyParticipantChanges(
   sessionId: string,
-  uid: string,
-  user: Pick<UserDoc, "nickname"> & { photoUrl?: string }
+  { add, remove }: ParticipantChanges
 ): Promise<void> {
   const db = getDb();
+  const sessionRef = sessionDoc(sessionId);
+
+  let waitlist: WaitlistEntry[] = [];
+  if (remove.length > 0) {
+    const wlSnap = await getDocs(
+      query(waitlistRef(sessionId), orderBy("createdAt"), limit(remove.length))
+    );
+    waitlist = wlSnap.docs.map((d) => d.data() as WaitlistEntry);
+  }
+
   await runTransaction(db, async (tx) => {
-    const sessionRef = sessionDoc(sessionId);
-    const regRef = doc(registrationsRef(sessionId), uid);
-    const wlRef = doc(waitlistRef(sessionId), uid);
-    const [regSnap, sessionSnap, wlSnap] = await Promise.all([
-      tx.get(regRef),
-      tx.get(sessionRef),
-      tx.get(wlRef),
-    ]);
-    if (regSnap.exists()) throw new Error("Already registered.");
+    const sessionSnap = await tx.get(sessionRef);
     if (!sessionSnap.exists()) throw new Error("Session not found.");
-    tx.set(regRef, {
+
+    // Firestore requires ALL reads before ANY write, so gather every snapshot
+    // we need up front, then perform all writes below.
+    const addEntries = add.map((user) => ({
+      user,
+      regRef: doc(registrationsRef(sessionId), user.uid),
+      wlRef: doc(waitlistRef(sessionId), user.uid),
+    }));
+    const removeEntries = remove.map((uid) => ({
       uid,
-      nickname: user.nickname,
-      photoUrl: user.photoUrl ?? "",
-      createdAt: serverTimestamp(),
-    } satisfies Registration);
-    tx.update(sessionRef, { count: increment(1) });
-    if (wlSnap.exists()) {
-      tx.delete(wlRef);
-      tx.update(sessionRef, { waitlistCount: increment(-1) });
-    }
+      regRef: doc(registrationsRef(sessionId), uid),
+    }));
+
+    const [addRegSnaps, addWlSnaps, removeRegSnaps] = await Promise.all([
+      Promise.all(addEntries.map((e) => tx.get(e.regRef))),
+      Promise.all(addEntries.map((e) => tx.get(e.wlRef))),
+      Promise.all(removeEntries.map((e) => tx.get(e.regRef))),
+    ]);
+
+    const removedCount = removeRegSnaps.filter((s) => s.exists).length;
+
+    // Promotion candidates: the oldest waitlisted members, capped at the
+    // number of spots actually freed. Read their docs now (before writes).
+    const candidates = removedCount > 0 ? waitlist.slice(0, removedCount) : [];
+    const candEntries = candidates.map((head) => ({
+      head,
+      wlRef: doc(waitlistRef(sessionId), head.uid),
+      regRef: doc(registrationsRef(sessionId), head.uid),
+    }));
+    const [candWlSnaps, candRegSnaps] = await Promise.all([
+      Promise.all(candEntries.map((c) => tx.get(c.wlRef))),
+      Promise.all(candEntries.map((c) => tx.get(c.regRef))),
+    ]);
+
+    let countDelta = 0;
+    let wlDelta = 0;
+    const added = new Set<string>();
+    const removedSet = new Set(remove);
+
+    addEntries.forEach((e, i) => {
+      if (addRegSnaps[i].exists()) return;
+      tx.set(e.regRef, {
+        uid: e.user.uid,
+        nickname: e.user.nickname,
+        photoUrl: e.user.photoUrl ?? "",
+        createdAt: serverTimestamp(),
+      } satisfies Registration);
+      added.add(e.user.uid);
+      countDelta += 1;
+      if (addWlSnaps[i].exists()) {
+        tx.delete(e.wlRef);
+        wlDelta -= 1;
+      }
+    });
+
+    removeEntries.forEach((e, i) => {
+      if (!removeRegSnaps[i].exists()) return;
+      tx.delete(e.regRef);
+      countDelta -= 1;
+    });
+
+    let freeSpots = removedCount;
+    candEntries.forEach((c, i) => {
+      if (freeSpots === 0) return;
+      if (added.has(c.head.uid) || removedSet.has(c.head.uid)) return;
+      if (!candWlSnaps[i].exists() || candRegSnaps[i].exists()) return;
+      tx.set(c.regRef, {
+        uid: c.head.uid,
+        nickname: c.head.nickname,
+        photoUrl: c.head.photoUrl ?? "",
+        createdAt: serverTimestamp(),
+      } satisfies Registration);
+      tx.delete(c.wlRef);
+      countDelta += 1;
+      wlDelta -= 1;
+      freeSpots -= 1;
+    });
+
+    if (countDelta !== 0) tx.update(sessionRef, { count: increment(countDelta) });
+    if (wlDelta !== 0) tx.update(sessionRef, { waitlistCount: increment(wlDelta) });
   });
 }
 
@@ -164,23 +251,20 @@ export async function unregisterFromSession(
   const headUid = headSnap.docs[0]?.id;
 
   await runTransaction(db, async (tx) => {
-    const [regSnap, sessionSnap] = await Promise.all([
+    const headRef = headUid ? doc(waitlistRef(sessionId), headUid) : null;
+    // All reads first (Firestore forbids reads after writes in a transaction).
+    const [regSnap, sessionSnap, headDoc] = await Promise.all([
       tx.get(regRef),
       tx.get(sessionRef),
+      headRef ? tx.get(headRef) : Promise.resolve(undefined),
     ]);
     if (!regSnap.exists()) throw new Error("You are not registered.");
+
     tx.delete(regRef);
     const session = sessionSnap.data() as SessionDoc | undefined;
     if (!session) return;
 
-    if (!headUid) {
-      tx.update(sessionRef, { count: increment(-1) });
-      return;
-    }
-
-    const headRef = doc(waitlistRef(sessionId), headUid);
-    const headDoc = await tx.get(headRef);
-    if (!headDoc.exists()) {
+    if (!headRef || !headDoc || !headDoc.exists()) {
       tx.update(sessionRef, { count: increment(-1) });
       return;
     }
@@ -271,8 +355,12 @@ export async function clearRating(ratedUid: string, raterUid: string): Promise<v
 const LEADERBOARD_TTL_MS = 60_000;
 const leaderboardCache = new Map<string, { data: LeaderboardEntry[]; expiresAt: number }>();
 
-export function invalidateLeaderboardCache(): void {
-  leaderboardCache.clear();
+export function invalidateLeaderboardCache(raterUid?: string): void {
+  if (raterUid) {
+    leaderboardCache.delete(raterUid);
+  } else {
+    leaderboardCache.clear();
+  }
 }
 
 export async function fetchLeaderboard(

@@ -172,7 +172,7 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
       } else {
         await setStars(ratedUid, currentUid, stars);
       }
-      invalidateLeaderboardCache();
+      invalidateLeaderboardCache(currentUid);
       setEntries((prev) => (prev ? applyRating(prev, ratedUid, stars) : prev));
     } catch (err) {
       console.error(err);

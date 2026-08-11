@@ -1,23 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { onSnapshot } from "firebase/firestore";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { getDocs, onSnapshot, query, where } from "firebase/firestore";
 import { Avatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
-import { formatSessionDate, isSessionEnded, normalizeSession } from "@/lib/date";
+import { daysAgoISODate, formatSessionDate, isSessionEnded, normalizeSession } from "@/lib/date";
 import { getSavedLocations, persistSavedLocations } from "@/lib/locations";
 import {
-  adminAddRegistration,
+  adminApplyParticipantChanges,
   createSession,
   deleteSession,
   registrationsRef,
   sessionsRef,
-  unregisterFromSession,
   updateSession,
   usersRef,
   waitlistRef,
 } from "@/lib/db";
 import { useWhenVisible } from "@/lib/useWhenVisible";
+import type { ParticipantToAdd } from "@/lib/db";
 import type { Registration, SessionDoc, UserDoc, WaitlistEntry } from "@/lib/types";
 
 interface SessionEntry {
@@ -49,6 +49,9 @@ const emptyForm: FormState = {
 
 const PREVIEW_COUNT = 8;
 
+/** Older sessions are not fetched by the admin list (records stay in Firestore). */
+const PAST_WINDOW_DAYS = 60;
+
 function todayString() {
   const d = new Date();
   const y = d.getFullYear();
@@ -69,6 +72,7 @@ export function AdminSessions() {
   const [error, setError] = useState("");
   const [savedLocations, setSavedLocations] = useState<string[]>([]);
   const [showPast, setShowPast] = useState(false);
+  const showPastRef = useRef(false);
   const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({});
   const [addOpen, setAddOpen] = useState<Record<string, boolean>>({});
   const [addSelected, setAddSelected] = useState<Record<string, string[]>>({});
@@ -79,50 +83,120 @@ export function AdminSessions() {
     void Promise.resolve(getSavedLocations()).then(setSavedLocations);
   }, []);
 
-  const subscribeSessions = useCallback(() => {
-    const unsub = onSnapshot(sessionsRef(), (snap) => {
-      setSessions(snap.docs.map((d) => ({ id: d.id, data: normalizeSession(d.data() as SessionDoc) })));
-    });
-    return unsub;
+  const countsRef = useRef<Record<string, string>>({});
+  const loadedRegsRef = useRef<Set<string>>(new Set());
+  const loadedWlRef = useRef<Set<string>>(new Set());
+
+  const loadRegistrations = useCallback(async (ids: string[]) => {
+    try {
+      const results = await Promise.all(ids.map((id) => getDocs(registrationsRef(id))));
+      loadedRegsRef.current = new Set([...loadedRegsRef.current, ...ids]);
+      setRegistrations((prev) => {
+        const nextReg = { ...prev };
+        results.forEach((snap, i) => {
+          nextReg[ids[i]] = snap.docs.map((d) => d.data() as Registration);
+        });
+        return nextReg;
+      });
+    } catch (err) {
+      console.error("Failed to load registrations", err);
+    }
   }, []);
 
-  const subscribeRegistrations = useCallback(() => {
-    if (!sessions) return;
-    const unsubs = sessions.map((s) =>
-      onSnapshot(registrationsRef(s.id), (snap) => {
-        setRegistrations((prev) => ({
-          ...prev,
-          [s.id]: snap.docs.map((d) => d.data() as Registration),
-        }));
-      })
-    );
-    return () => unsubs.forEach((u) => u());
-  }, [sessions]);
+  const loadWaitlists = useCallback(async (ids: string[]) => {
+    try {
+      const results = await Promise.all(ids.map((id) => getDocs(waitlistRef(id))));
+      loadedWlRef.current = new Set([...loadedWlRef.current, ...ids]);
+      setWaitlists((prev) => {
+        const nextWl = { ...prev };
+        results.forEach((snap, i) => {
+          nextWl[ids[i]] = snap.docs.map((d) => d.data() as WaitlistEntry);
+        });
+        return nextWl;
+      });
+    } catch (err) {
+      console.error("Failed to load waitlists", err);
+    }
+  }, []);
 
-  const subscribeWaitlists = useCallback(() => {
-    if (!sessions) return;
-    const unsubs = sessions.map((s) =>
-      onSnapshot(waitlistRef(s.id), (snap) => {
-        setWaitlists((prev) => ({
-          ...prev,
-          [s.id]: snap.docs.map((d) => d.data() as WaitlistEntry),
-        }));
-      })
-    );
-    return () => unsubs.forEach((u) => u());
-  }, [sessions]);
+  const loadPastDetails = useCallback(() => {
+    const pastIds = (sessions ?? [])
+      .filter((s) => isSessionEnded(s.data))
+      .map((s) => s.id);
+    const needRegs = pastIds.filter((id) => !loadedRegsRef.current.has(id));
+    const needWl = pastIds.filter((id) => !loadedWlRef.current.has(id));
+    if (needRegs.length > 0) void loadRegistrations(needRegs);
+    if (needWl.length > 0) void loadWaitlists(needWl);
+  }, [sessions, loadRegistrations, loadWaitlists]);
 
-  const subscribeUsers = useCallback(() => {
-    const unsub = onSnapshot(usersRef(), (snap) => {
-      setUsers(snap.docs.map((d) => ({ uid: d.id, data: d.data() as UserDoc })));
-    });
+  const subscribeSessions = useCallback(() => {
+    const unsub = onSnapshot(
+      query(sessionsRef(), where("date", ">=", daysAgoISODate(PAST_WINDOW_DAYS))),
+      (snap) => {
+        const next = snap.docs.map((d) => ({
+          id: d.id,
+          data: normalizeSession(d.data() as SessionDoc),
+        }));
+        setSessions(next);
+
+        const seen = new Set(next.map((s) => s.id));
+        const changedRegs: string[] = [];
+        const changedWl: string[] = [];
+        for (const { id, data } of next) {
+          if (isSessionEnded(data) && !showPastRef.current) continue;
+          const [prevCount, prevWl] = countsRef.current[id]?.split("|") ?? [undefined, undefined];
+          const count = String(data.count);
+          const wl = String(data.waitlistCount ?? 0);
+          if (prevCount !== count || !loadedRegsRef.current.has(id)) changedRegs.push(id);
+          if (prevWl !== wl || !loadedWlRef.current.has(id)) changedWl.push(id);
+        }
+
+        const removed = Object.keys(countsRef.current).filter((id) => !seen.has(id));
+        if (removed.length > 0) {
+          const nextLoadedRegs = new Set(loadedRegsRef.current);
+          const nextLoadedWl = new Set(loadedWlRef.current);
+          removed.forEach((id) => {
+            nextLoadedRegs.delete(id);
+            nextLoadedWl.delete(id);
+          });
+          loadedRegsRef.current = nextLoadedRegs;
+          loadedWlRef.current = nextLoadedWl;
+          setRegistrations((prev) => {
+            const nextReg = { ...prev };
+            removed.forEach((id) => delete nextReg[id]);
+            return nextReg;
+          });
+          setWaitlists((prev) => {
+            const nextWl = { ...prev };
+            removed.forEach((id) => delete nextWl[id]);
+            return nextWl;
+          });
+        }
+
+        countsRef.current = Object.fromEntries(
+          next.map(({ id, data }) => [id, `${data.count}|${data.waitlistCount ?? 0}`])
+        );
+
+        if (changedRegs.length > 0) {
+          void loadRegistrations(changedRegs);
+        }
+        if (changedWl.length > 0) {
+          void loadWaitlists(changedWl);
+        }
+      }
+    );
     return unsub;
+  }, [loadRegistrations, loadWaitlists]);
+
+  const usersLoadedAtRef = useRef(0);
+  const loadUsers = useCallback(async (force = false) => {
+    if (!force && usersLoadedAtRef.current > Date.now() - 60_000) return;
+    const snap = await getDocs(usersRef());
+    setUsers(snap.docs.map((d) => ({ uid: d.id, data: d.data() as UserDoc })));
+    usersLoadedAtRef.current = Date.now();
   }, []);
 
   useWhenVisible(subscribeSessions);
-  useWhenVisible(subscribeRegistrations);
-  useWhenVisible(subscribeWaitlists);
-  useWhenVisible(subscribeUsers);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -283,18 +357,29 @@ export function AdminSessions() {
     }
     setAddBusy(sessionId);
     setError("");
+    if (toAdd.length > 0 && !users) {
+      try {
+        await loadUsers(true);
+      } catch (err) {
+        console.error(err);
+        setError("Could not load members.");
+        setAddBusy(null);
+        return;
+      }
+    }
     try {
-      for (const uid of toAdd) {
-        const user = users?.find((u) => u.uid === uid);
-        if (!user) continue;
-        await adminAddRegistration(sessionId, uid, {
-          nickname: user.data.nickname,
-          photoUrl: user.data.photoUrl,
-        });
-      }
-      for (const uid of toRemove) {
-        await unregisterFromSession(sessionId, uid);
-      }
+      const add = toAdd
+        .map((uid): ParticipantToAdd | null => {
+          const user = users?.find((u) => u.uid === uid);
+          if (!user) return null;
+          return {
+            uid,
+            nickname: user.data.nickname,
+            photoUrl: user.data.photoUrl,
+          };
+        })
+        .filter((x): x is ParticipantToAdd => x !== null);
+      await adminApplyParticipantChanges(sessionId, { add, remove: toRemove });
       setAddOpen((prev) => ({ ...prev, [sessionId]: false }));
       setAddSelected((prev) => ({ ...prev, [sessionId]: [] }));
       setAddSearch((prev) => ({ ...prev, [sessionId]: "" }));
@@ -474,6 +559,7 @@ export function AdminSessions() {
             <button
               type="button"
               onClick={() => {
+                void loadUsers();
                 setAddOpen((prev) => ({ ...prev, [s.id]: true }));
                 setAddSelected((prev) => ({ ...prev, [s.id]: regs.map((r) => r.uid) }));
               }}
@@ -707,7 +793,12 @@ export function AdminSessions() {
               <section>
                 <button
                   type="button"
-                  onClick={() => setShowPast((v) => !v)}
+                  onClick={() => {
+                    const next = !showPast;
+                    setShowPast(next);
+                    showPastRef.current = next;
+                    if (next) loadPastDetails();
+                  }}
                   className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3"
                 >
                   <span className="text-sm font-semibold uppercase tracking-wide text-slate-400">

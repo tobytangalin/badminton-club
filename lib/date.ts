@@ -50,6 +50,18 @@ function toISODate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Today as an ISO `YYYY-MM-DD` string in the local timezone. */
+export function todayISODate(): string {
+  return toISODate(new Date());
+}
+
+/** `days` ago as an ISO `YYYY-MM-DD` string in the local timezone. */
+export function daysAgoISODate(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return toISODate(d);
+}
+
 function toHHMM(d: Date): string {
   const h = String(d.getHours()).padStart(2, "0");
   const min = String(d.getMinutes()).padStart(2, "0");
