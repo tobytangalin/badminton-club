@@ -439,6 +439,14 @@ export function invalidateLeaderboardCache(): void {
   removeStoredCache(LEADERBOARD_CACHE_KEY);
 }
 
+/** True when the next `fetchLeaderboard` would serve from cache (no Firestore read). */
+export function isLeaderboardCacheFresh(): boolean {
+  const now = Date.now();
+  if (leaderboardCache && leaderboardCache.expiresAt > now) return true;
+  const stored = readStoredCache<LeaderboardEntry[]>(LEADERBOARD_CACHE_KEY);
+  return !!stored && stored.expiresAt > now && Array.isArray(stored.data);
+}
+
 export async function fetchLeaderboard(
   raterUid: string,
   myRatings?: Record<string, number>

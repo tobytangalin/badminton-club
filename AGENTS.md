@@ -167,13 +167,18 @@ regress these:
   from each user doc's denormalized `ratingSum`/`ratingCount`, and the current user's
   own `myStars` are overlaid from their subscribed user doc's `myRatings`, so no
   `ratings` collection scan happens. Rating a player recomputes that row locally
-  (`applyRating`) and does NOT invalidate the cache (the base refreshes on its TTL) —
-  there is
-  **no refetch after rating and no polling** (polling would blow the read budget).
+  (`applyRating`); `MembersClient` records the computed avg/count in
+  `localRatingsRef` and re-applies it over any cache-hit refetch
+  (`isLeaderboardCacheFresh`), so a stale base can't clobber the just-applied
+  average while the live `myRatings` overlay still updates — the base refreshes
+  on its TTL and there is
+  **no refetch-after-rating read and no polling** (polling would blow the read budget).
   The Members page renders as cards on mobile and a `table-fixed` table on
   desktop — keep it that way so the page **never shows a horizontal scrollbar**.
   Mobile shows Name / Power level sort pills in the list header (shared sort
-  state with the desktop table).
+  state with the desktop table). Tooltips (`InfoTooltip`) are viewport-constrained
+  (`max-w-[calc(100vw-1.5rem)]`) and the mobile pills' tooltips are centered or
+  right-aligned so they can't extend past the screen edge.
 - **Session registrations** (`SessionsView` + `AdminSessions`): ONE live
   `onSnapshot` on `sessions`. Rosters are **lazy**: a session's registrations and
   waitlist are fetched once on first view (and again on the "and N more" expand),

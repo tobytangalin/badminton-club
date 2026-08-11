@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { Avatar } from "@/components/Avatar";
 import { FractionalShuttle } from "@/components/Shuttle";
@@ -8,7 +8,7 @@ import { InfoTooltip } from "@/components/InfoTooltip";
 import { StarRating } from "@/components/StarRating";
 import { Spinner } from "@/components/Spinner";
 import { cn } from "@/lib/cn";
-import { clearRating, fetchLeaderboard, setStars } from "@/lib/db";
+import { clearRating, fetchLeaderboard, isLeaderboardCacheFresh, setStars } from "@/lib/db";
 import { applyRating } from "@/lib/leaderboard";
 import type { LeaderboardEntry } from "@/lib/types";
 
@@ -79,7 +79,7 @@ function SortPill({
   onToggle: (key: SortKey) => void;
   tooltipOpen?: boolean;
   onTooltipToggle?: () => void;
-  align?: "left" | "right";
+  align?: "center" | "left" | "right";
 }) {
   const arrow = !active ? "" : dir === "asc" ? "↑" : "↓";
   return (
@@ -117,6 +117,7 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
   const [sortKey, setSortKey] = useState<SortKey>("power");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [openTooltip, setOpenTooltip] = useState<string | null>(null);
+  const localRatingsRef = useRef<Map<string, { avg: number; count: number }>>(new Map());
 
   function toggleTooltip(key: string) {
     setOpenTooltip((cur) => (cur === key ? null : key));
@@ -124,9 +125,22 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    const cached = isLeaderboardCacheFresh();
     fetchLeaderboard(currentUid, userData?.myRatings)
       .then((data) => {
-        if (!cancelled) setEntries(data);
+        if (cancelled) return;
+        setEntries((prev) => {
+          if (!prev) return data;
+          if (!cached) {
+            localRatingsRef.current = new Map();
+            return data;
+          }
+          if (localRatingsRef.current.size === 0) return data;
+          return data.map((fresh) => {
+            const local = localRatingsRef.current.get(fresh.uid);
+            return local ? { ...fresh, avg: local.avg, count: local.count } : fresh;
+          });
+        });
       })
       .catch((err) => {
         console.error(err);
@@ -170,7 +184,17 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
       } else {
         await setStars(ratedUid, currentUid, stars);
       }
-      setEntries((prev) => (prev ? applyRating(prev, ratedUid, stars) : prev));
+      setEntries((prev) => {
+        if (!prev) return prev;
+        const next = applyRating(prev, ratedUid, stars);
+        const row = next.find((e) => e.uid === ratedUid);
+        if (row) {
+          const map = new Map(localRatingsRef.current);
+          map.set(ratedUid, { avg: row.avg, count: row.count });
+          localRatingsRef.current = map;
+        }
+        return next;
+      });
     } catch (err) {
       console.error(err);
       setError("Could not save your rating.");
@@ -325,7 +349,7 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
                 info="Power level is a player's badminton skill as rated by club members."
                 tooltipOpen={openTooltip === "power"}
                 onTooltipToggle={() => toggleTooltip("power")}
-                align="left"
+                align="center"
               />
             </div>
             <span className="flex shrink-0 items-center gap-1">

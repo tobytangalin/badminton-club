@@ -188,3 +188,76 @@ describe("fetchLeaderboard", () => {
     expect(globalThis.localStorage.getItem("sb:leaderboard:v1")).toBeNull();
   });
 });
+
+describe("isLeaderboardCacheFresh", () => {
+  beforeEach(() => {
+    h.getDocs.mockReset();
+    db.invalidateLeaderboardCache();
+    const store = new Map<string, string>();
+    globalThis.localStorage = {
+      get length() {
+        return store.size;
+      },
+      clear: () => store.clear(),
+      key: (i: number) => [...store.keys()][i] ?? null,
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    };
+  });
+
+  afterEach(() => {
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+    db.invalidateLeaderboardCache();
+  });
+
+  it("is false when nothing is cached", () => {
+    expect(db.isLeaderboardCacheFresh()).toBe(false);
+  });
+
+  it("is true after a fetch populates the cache", async () => {
+    h.getDocs.mockResolvedValue(
+      makeQuerySnap([{ id: "u1", data: { nickname: "Ann", approved: true } }], "users")
+    );
+
+    await db.fetchLeaderboard("me");
+
+    expect(db.isLeaderboardCacheFresh()).toBe(true);
+  });
+
+  it("is false after invalidation", async () => {
+    h.getDocs.mockResolvedValue(
+      makeQuerySnap([{ id: "u1", data: { nickname: "Ann", approved: true } }], "users")
+    );
+
+    await db.fetchLeaderboard("me");
+    db.invalidateLeaderboardCache();
+
+    expect(db.isLeaderboardCacheFresh()).toBe(false);
+  });
+
+  it("is true from a fresh localStorage cache with cold memory", () => {
+    globalThis.localStorage.setItem(
+      "sb:leaderboard:v1",
+      JSON.stringify({
+        data: [{ uid: "u1", nickname: "Ann" }],
+        expiresAt: Date.now() + 600_000,
+      })
+    );
+
+    expect(db.isLeaderboardCacheFresh()).toBe(true);
+  });
+
+  it("is false when the stored cache is expired", () => {
+    globalThis.localStorage.setItem(
+      "sb:leaderboard:v1",
+      JSON.stringify({ data: [], expiresAt: Date.now() - 1_000 })
+    );
+
+    expect(db.isLeaderboardCacheFresh()).toBe(false);
+  });
+});

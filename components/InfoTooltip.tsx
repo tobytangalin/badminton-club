@@ -30,7 +30,7 @@ export function InfoTooltip({
       <span
         role="tooltip"
         className={cn(
-          "pointer-events-none absolute top-full z-10 mt-1.5 w-60 rounded-lg bg-slate-800 px-3 py-2 text-left text-xs leading-snug text-white shadow-lg",
+          "pointer-events-none absolute top-full z-10 mt-1.5 w-60 max-w-[calc(100vw-1.5rem)] rounded-lg bg-slate-800 px-3 py-2 text-left text-xs leading-snug text-white shadow-lg",
           align === "center" && "left-1/2 -translate-x-1/2",
           align === "right" && "right-0",
           align === "left" && "left-0",
