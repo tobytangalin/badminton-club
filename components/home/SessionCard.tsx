@@ -5,38 +5,43 @@ import { Avatar } from "@/components/Avatar";
 import { joinWaitlist, leaveWaitlist, registerForSession, unregisterFromSession } from "@/lib/db";
 import { formatSessionDate } from "@/lib/date";
 import { formatMoney, perPlayerCost } from "@/lib/payments";
-import type { Registration, SessionDoc, WaitlistEntry } from "@/lib/types";
+import type { Registration, SessionDoc } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 interface SessionCardProps {
   sessionId: string;
   session: SessionDoc;
   registrations: Registration[];
-  waitlist: WaitlistEntry[];
   currentUid: string;
   currentNickname: string;
   currentPhotoUrl?: string;
   needsProfile: boolean;
+  isRegistered: boolean;
+  isWaitlisted: boolean;
+  waitlistPosition: number;
+  onStatusChanged: (sessionId: string, status: { registered: boolean; waitlisted: boolean }) => void;
+  onRefreshRoster: (sessionId: string) => void;
 }
 
 export function SessionCard({
   sessionId,
   session,
   registrations,
-  waitlist,
   currentUid,
   currentNickname,
   currentPhotoUrl,
   needsProfile,
+  isRegistered,
+  isWaitlisted,
+  waitlistPosition,
+  onStatusChanged,
+  onRefreshRoster,
 }: SessionCardProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [showAllPlayers, setShowAllPlayers] = useState(false);
   const PREVIEW_COUNT = 8;
 
-  const isRegistered = registrations.some((r) => r.uid === currentUid);
-  const isWaitlisted = waitlist.some((w) => w.uid === currentUid);
-  const waitlistPosition = waitlist.findIndex((w) => w.uid === currentUid) + 1;
   const capacity = session.capacity;
   const hasCapacity = typeof capacity === "number";
   const isFull = hasCapacity && session.count >= capacity;
@@ -52,8 +57,10 @@ export function SessionCard({
     setBusy(true);
     setError("");
     try {
+      let next: { registered: boolean; waitlisted: boolean } | null = null;
       if (isRegistered) {
         await unregisterFromSession(sessionId, currentUid);
+        next = { registered: false, waitlisted: false };
       } else if (isWaitlisted) {
         await leaveWaitlist(sessionId, currentUid);
         if (!isFull) {
@@ -61,18 +68,24 @@ export function SessionCard({
             nickname: currentNickname,
             photoUrl: currentPhotoUrl,
           });
+          next = { registered: true, waitlisted: false };
+        } else {
+          next = { registered: false, waitlisted: false };
         }
       } else if (isFull) {
         await joinWaitlist(sessionId, currentUid, {
           nickname: currentNickname,
           photoUrl: currentPhotoUrl,
         });
+        next = { registered: false, waitlisted: true };
       } else {
         await registerForSession(sessionId, currentUid, {
           nickname: currentNickname,
           photoUrl: currentPhotoUrl,
         });
+        next = { registered: true, waitlisted: false };
       }
+      if (next) onStatusChanged(sessionId, next);
     } catch (err) {
       setError((err as Error).message || "Action failed.");
     } finally {
@@ -169,7 +182,11 @@ export function SessionCard({
             {registrations.length > PREVIEW_COUNT && (
               <button
                 type="button"
-                onClick={() => setShowAllPlayers((v) => !v)}
+                onClick={() => {
+                  const next = !showAllPlayers;
+                  setShowAllPlayers(next);
+                  if (next) onRefreshRoster(sessionId);
+                }}
                 className="mt-2 text-sm font-semibold text-teal-700 hover:text-teal-800"
               >
                 {showAllPlayers

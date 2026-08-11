@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { getDocs, onSnapshot, query, where } from "firebase/firestore";
 import { Avatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
+import { createDebouncedBatcher } from "@/lib/batch";
 import { daysAgoISODate, formatSessionDate, isSessionEnded, normalizeSession } from "@/lib/date";
 import { getSavedLocations, persistSavedLocations } from "@/lib/locations";
 import {
@@ -51,6 +52,9 @@ const PREVIEW_COUNT = 8;
 
 /** Older sessions are not fetched by the admin list (records stay in Firestore). */
 const PAST_WINDOW_DAYS = 60;
+
+/** Coalesce roster re-fetches into one read per session per window. */
+const ROSTER_REFRESH_MS = 3_000;
 
 function todayString() {
   const d = new Date();
@@ -119,6 +123,35 @@ export function AdminSessions() {
     }
   }, []);
 
+  const batchersRef = useRef<{
+    regs: ReturnType<typeof createDebouncedBatcher<string>>;
+    wl: ReturnType<typeof createDebouncedBatcher<string>>;
+  } | null>(null);
+
+  useEffect(() => {
+    const regs = createDebouncedBatcher<string>(
+      (ids) => void loadRegistrations(ids),
+      ROSTER_REFRESH_MS
+    );
+    const wl = createDebouncedBatcher<string>(
+      (ids) => void loadWaitlists(ids),
+      ROSTER_REFRESH_MS
+    );
+    batchersRef.current = { regs, wl };
+    return () => {
+      regs.dispose();
+      wl.dispose();
+      batchersRef.current = null;
+    };
+  }, [loadRegistrations, loadWaitlists]);
+
+  const scheduleFetches = useCallback((regIds: string[], wlIds: string[]) => {
+    const batchers = batchersRef.current;
+    if (!batchers) return;
+    regIds.forEach((id) => batchers.regs.push(id));
+    wlIds.forEach((id) => batchers.wl.push(id));
+  }, []);
+
   const loadPastDetails = useCallback(() => {
     const pastIds = (sessions ?? [])
       .filter((s) => isSessionEnded(s.data))
@@ -177,16 +210,13 @@ export function AdminSessions() {
           next.map(({ id, data }) => [id, `${data.count}|${data.waitlistCount ?? 0}`])
         );
 
-        if (changedRegs.length > 0) {
-          void loadRegistrations(changedRegs);
-        }
-        if (changedWl.length > 0) {
-          void loadWaitlists(changedWl);
+        if (changedRegs.length > 0 || changedWl.length > 0) {
+          scheduleFetches(changedRegs, changedWl);
         }
       }
     );
     return unsub;
-  }, [loadRegistrations, loadWaitlists]);
+  }, [scheduleFetches]);
 
   const usersLoadedAtRef = useRef(0);
   const loadUsers = useCallback(async (force = false) => {
