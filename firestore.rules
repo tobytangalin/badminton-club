@@ -36,11 +36,14 @@ service cloud.firestore {
     // bootstrapped server-side (see app/api/bootstrap).
     //
     // Denormalized rating aggregates: any approved member may nudge another
-    // user's ratingSum/ratingCount as part of a rating transaction. The
-    // written post-state is bounded to a valid average (1..5 stars) and either
-    // a rating doc for this rater exists or the count changed by one — rules
-    // can only read pre-transaction state, so the delta cannot be matched to
-    // the same-transaction rating write exactly.
+    // user's ratingSum/ratingCount as part of a rating transaction. The written
+    // post-state is bounded to a valid average (1..5 stars) and the count may
+    // move by at most one per write (new rating +1, re-rating 0, clear -1).
+    // Rules cannot read a same-transaction rating write, and the rating doc id
+    // (`<ratedUid>_<raterUid>`) can't be referenced in a path (path segments
+    // can't concatenate $() expressions), so the delta isn't matched to the
+    // rating doc exactly — a member could set a valid average directly, but
+    // can't inflate beyond it or touch other profile fields.
     function isRatingAggregateUpdate(uid) {
       return isApproved()
         && request.auth.uid != uid
@@ -52,11 +55,12 @@ service cloud.firestore {
         && request.resource.data.ratingSum >= request.resource.data.ratingCount
         && request.resource.data.ratingSum <= 5 * request.resource.data.ratingCount
         && (
-          exists(/databases/$(database)/documents/ratings/$(uid)_$(request.auth.uid))
+          request.resource.data.ratingCount
+            == ('ratingCount' in resource.data ? resource.data.ratingCount : 0) - 1
+          || request.resource.data.ratingCount
+            == ('ratingCount' in resource.data ? resource.data.ratingCount : 0)
           || request.resource.data.ratingCount
             == ('ratingCount' in resource.data ? resource.data.ratingCount : 0) + 1
-          || request.resource.data.ratingCount
-            == ('ratingCount' in resource.data ? resource.data.ratingCount : 0) - 1
         );
     }
 
