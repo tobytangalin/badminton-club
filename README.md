@@ -1,7 +1,9 @@
 # Social Badminton Club
 
 Badminton club management app with the following features: 
-- Members can sign up (Google SSO or username/password) to book sessions and rate the badminton skills of other users. Must be approved by admin to gain access.
+- Members can sign up (Google SSO or username/password) to book sessions and rate the badminton skills of other users. Must be approved by admin to gain access
+- When a session is full, members can join a waitlist and are auto-promoted into the next open spot
+- Members see a ranked "power level" leaderboard built from everyone's ratings
 - Admins can create and manage sessions, approve new members, and assign user roles
 - Built to run entirely inside the **Google Cloud Free Tier**
 
@@ -75,6 +77,25 @@ no client code can bypass it:
 - Match planning (with Elo rating based on match results)
 - Tournament mode
 
+## Testing
+
+```bash
+npm test
+```
+
+Runs a vitest suite that guards both behavior and the Firestore free-tier read
+budget:
+
+- Unit tests for `lib/payments.ts`, `lib/date.ts`, and the leaderboard
+  recompute (`applyRating`).
+- Firestore **usage tests** (`lib/__tests__/db-*.test.ts`) with a mocked SDK:
+  they assert exact read/write counts — e.g. loading the leaderboard reads only
+  the `users` collection (never the whole `ratings` collection) and serves the
+  60s cache with zero reads, and every rating write is 3 reads → 3 writes with
+  all reads happening before writes.
+- Read-planning tests (`planRosterReads`) that lock in the lazy-roster gating:
+  a count change on a session the member has no stake in causes **zero** reads.
+
 ## Project layout
 
 ```
@@ -96,6 +117,10 @@ lib/
   firebase.ts               Client SDK (lazy init)
   firebase-admin.ts         Server SDK (guarded)
   db.ts                     Firestore/storage helpers + transactions
+  sessionReads.ts           Roster read-planning (lazy-roster gating)
+  batch.ts                  Debounced fetch batcher
+  leaderboard.ts            Local leaderboard recompute (applyRating)
+  __tests__/                Vitest suite (usage + unit tests)
 firestore.rules             Data access rules (roles enforced here)
 storage.rules               Profile photo rules
 Dockerfile, cloudbuild.yaml, cloudbuild.push.yaml,
@@ -176,5 +201,7 @@ no migrations. The `matches` subcollection is already permitted in
    existing pages required.
 
 Keep these habits to stay inside the free tier: prefer **subcollections**,
-**batch writes** for multi-doc changes, and **aggregation queries**
-(`count`/`sum`) instead of pulling whole collections.
+**batch writes** for multi-doc changes, **denormalized aggregates** (e.g. rating
+scores live on user docs), a single real-time listener with **lazy rosters**
+(debounced, and never re-read on every count change), and **listener teardown**
+while the tab is hidden. The test suite asserts these read/write counts.

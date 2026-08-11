@@ -64,12 +64,15 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   (Edit → "Delete account" → type their nickname to confirm). The delete route
   only decrements a session's count if the session doc still exists — orphaned
   registrations from previously deleted sessions are cleaned up regardless. It
-  also deletes the user's `waitlist` docs and decrements `waitlistCount`.
+  also deletes the user's `waitlist` docs and decrements `waitlistCount`, and
+  decrements `ratingSum`/`ratingCount` on every user the deleted member had rated.
 - **Lazy SDK init**: `lib/firebase.ts` never initializes at module top-level; call
   `getFirebaseApp()`/`getDb()` inside hooks/handlers so `next build` prerendering works.
 - **Firestore collections** (`lib/types.ts`):
   - `users/{uid}` — `nickname`, `photoUrl`, `role` (`member`|`admin`), `email`,
-    `approved` (optional; absent/true = approved, new accounts start `false`)
+    `approved` (optional; absent/true = approved, new accounts start `false`),
+    and denormalized rating aggregates: `ratingSum`/`ratingCount` (ratings
+    *received*) + `myRatings` (map of ratings *given*, keyed by ratedUid)
   - `sessions/{id}` — `date` (ISO `YYYY-MM-DD`), `startTime`, `endTime`,
     `location`, `capacity` (optional; null/absent = no limit), `count`,
     `waitlistCount` (optional; 0 when absent), `cost` (total, optional),
@@ -100,6 +103,21 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   deltas against `resource.data` via absent-aware `countOf`/`waitlistCountOf` helpers.
   Never use `!('field' in request.resource.data)` to detect "field not written" in an
   update rule.
+- **Ratings**: the leaderboard is built entirely from denormalized aggregates on
+  the user docs — `ratingSum`/`ratingCount` (stars received) and `myRatings`
+  (stars given, keyed by ratedUid) — so `fetchLeaderboard` reads ONLY the `users`
+  collection (no `ratings` scan). `setStars`/`clearRating` in `lib/db.ts` are ONE
+  `runTransaction`: write/delete `ratings/{ratedUid}_{raterUid}` + update the
+  rated user's aggregates + the rater's own `myRatings` (all reads before writes).
+  Rules: the `users` update rule adds `isRatingAggregateUpdate(uid)` — a non-self
+  approved member may touch ONLY `ratingSum`/`ratingCount`, the post-state average
+  is bounded to 1..5 stars, and the count may move by at most ±1 per write (new
+  rating +1, re-rating 0, clear -1). Gotcha: rules cannot reference the rating doc
+  id (`<ratedUid>_<raterUid>` — path segments can't concatenate `$()`), so the
+  aggregate delta is NOT matched to the same-transaction rating write; a member
+  could set a valid average directly, but can't inflate past 5 stars or touch any
+  other profile field. On user deletion (`app/api/admin/users/[uid]`), every user
+  the deleted member had rated gets `ratingSum`/`ratingCount` decremented.
 - **Costs**: `lib/payments.ts` — `perPlayerCost = cost / (playersOverride ?? count)`;
   currency is `NEXT_PUBLIC_CURRENCY` (default `DKK`).
 - **Dates**: sessions store ISO `date` + 24h `startTime`/`endTime`.
@@ -152,15 +170,23 @@ regress these:
   Mobile shows Name / Power level sort pills in the list header (shared sort
   state with the desktop table).
 - **Session registrations** (`SessionsView` + `AdminSessions`): ONE live
-  `onSnapshot` on `sessions`; a session's registrations are fetched once with
-  `getDocs` only when its `count` changes, and its waitlist members only when
-  `waitlistCount` changes — tracked via `countsRef` + `loadedRegsRef`/
-  `loadedWlRef` (loaded-set retries after a failed first fetch). `countsRef` is
-  NOT reset on `useWhenVisible` resubscribe, so tab-focus only re-reads sessions
-  whose counts actually changed. Avoid adding a per-session listener loop (the
-  old AdminSessions per-session `registrations`/`waitlist` listeners were
-  removed). Home's sessions query filters to `date >= today` (`todayISODate`);
-  admin's is capped to `PAST_WINDOW_DAYS`.
+  `onSnapshot` on `sessions`. Rosters are **lazy**: a session's registrations and
+  waitlist are fetched once on first view (and again on the "and N more" expand),
+  NOT re-read on every count change. When a count changes, only the current
+  member's own `registrations/{me}` + `waitlist/{me}` docs are re-read — and only
+  for sessions they have a stake in (`checkOwnStatus`); a waitlisted member's full
+  waitlist is re-read so their queue position stays exact and auto-promotion is
+  detected. All re-fetches are coalesced through a 3s debounce
+  (`createDebouncedBatcher` in `lib/batch.ts`), and the per-snapshot read plan is
+  a pure function, `planRosterReads` in `lib/sessionReads.ts` (tested). Admin
+  still re-reads a session's roster when its counts change (few admins), also
+  debounced. Tracking lives in `countsRef` + `loadedRegsRef`/`loadedWlRef`
+  (loaded-set retries after a failed first fetch); `countsRef` is NOT reset on
+  `useWhenVisible` resubscribe, so tab-focus only re-reads sessions whose counts
+  actually changed. Avoid adding a per-session listener loop (the old
+  AdminSessions per-session `registrations`/`waitlist` listeners were removed).
+  Home's sessions query filters to `date >= today` (`todayISODate`); admin's is
+  capped to `PAST_WINDOW_DAYS`.
 - **Firestore transactions** (`lib/db.ts`): ALL reads must complete before ANY
   write in a `runTransaction` — never `tx.get` after a `tx.set`/`tx.update`/
   `tx.delete` (the SDK throws "transactions require all reads to be executed
@@ -187,6 +213,26 @@ regress these:
   when the fetch resolves, never after `caches.open()` resolves (the body is
   already consumed). Bump `CACHE_NAME` when changing caching behavior so the old
   cache is purged on activate.
+
+## Testing
+
+- `npm run test` runs vitest (`vitest.config.ts`, node env, `**/*.test.ts`).
+  The suite deliberately guards the free-tier budget, not just behavior:
+  - **Pure units**: `lib/payments.ts`, `lib/date.ts`, and `applyRating`
+    (`lib/leaderboard.ts`, extracted from `MembersClient`).
+  - **DB usage tests** (`lib/__tests__/db-*.test.ts`) mock `firebase/firestore` +
+    `@/lib/firebase` (`lib/__tests__/helpers/firestore.ts`) and assert EXACT
+    read/write call counts and ordering — e.g. `fetchLeaderboard` does exactly 1
+    `users` read and 0 `ratings` reads and serves the 60s cache with 0 reads;
+    `setStars`/`clearRating` do 3 reads → 3 writes. The fake transaction throws
+    on a read after the first write, so the "all reads before all writes" rule
+    is enforced by the tests too.
+  - **Read-planning**: `planRosterReads` (`lib/sessionReads.ts`) is tested for
+    exact gating (no-stake count change → ZERO reads; registered stake →
+    own-doc check only; waitlisted stake → waitlist refresh + own check) and
+    `createDebouncedBatcher` (`lib/batch.ts`) with fake timers.
+- The db tests are white-box on purpose: they lock in the call patterns, so
+  update them whenever `lib/db.ts`, `planRosterReads`, or the debounce changes.
 
 ## Routes & nav
 
