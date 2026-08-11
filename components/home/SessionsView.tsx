@@ -31,6 +31,7 @@ export function SessionsView() {
   const loadedRegsRef = useRef<Set<string>>(new Set());
   const loadedWlRef = useRef<Set<string>>(new Set());
   const myStatusRef = useRef<Record<string, MyStatus>>({});
+  const firstSnapshotRef = useRef(true);
 
   const updateMyStatus = useCallback((entries: Record<string, MyStatus>) => {
     myStatusRef.current = { ...myStatusRef.current, ...entries };
@@ -211,8 +212,14 @@ export function SessionsView() {
         );
 
         if (plan.newRegs.length > 0 || plan.newWl.length > 0 || plan.refreshWl.length > 0) {
-          scheduleFetches(plan.newRegs, [...plan.newWl, ...plan.refreshWl]);
+          if (firstSnapshotRef.current) {
+            void loadRegistrations(plan.newRegs);
+            void loadWaitlists([...plan.newWl, ...plan.refreshWl]);
+          } else {
+            scheduleFetches(plan.newRegs, [...plan.newWl, ...plan.refreshWl]);
+          }
         }
+        firstSnapshotRef.current = false;
         if (plan.checkOwn.length > 0) {
           void checkOwnStatus(plan.checkOwn);
         }
@@ -223,7 +230,7 @@ export function SessionsView() {
       }
     );
     return unsub;
-  }, [scheduleFetches, checkOwnStatus]);
+  }, [scheduleFetches, checkOwnStatus, loadRegistrations, loadWaitlists]);
 
   useWhenVisible(subscribe);
 
@@ -271,6 +278,7 @@ export function SessionsView() {
                   sessionId={s.id}
                   session={s.data}
                   registrations={registrations[s.id] ?? []}
+                  rosterLoaded={registrations[s.id] !== undefined}
                   currentUid={uid}
                   currentNickname={userData?.nickname ?? ""}
                   currentPhotoUrl={userData?.photoUrl}

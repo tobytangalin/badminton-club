@@ -12,6 +12,7 @@ interface SessionCardProps {
   sessionId: string;
   session: SessionDoc;
   registrations: Registration[];
+  rosterLoaded: boolean;
   currentUid: string;
   currentNickname: string;
   currentPhotoUrl?: string;
@@ -27,6 +28,7 @@ export function SessionCard({
   sessionId,
   session,
   registrations,
+  rosterLoaded,
   currentUid,
   currentNickname,
   currentPhotoUrl,
@@ -149,7 +151,7 @@ export function SessionCard({
 
       <div className="mt-4">
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
-          Signed up ({registrations.length}
+          Signed up ({session.count}
           {hasCapacity ? `/${session.capacity}` : ""})
           {waitlistCount > 0 && (
             <span className="ml-2 normal-case text-indigo-600">
@@ -157,7 +159,9 @@ export function SessionCard({
             </span>
           )}
         </p>
-        {registrations.length === 0 ? (
+        {!rosterLoaded ? (
+          <p className="text-sm text-slate-500">Loading signups…</p>
+        ) : registrations.length === 0 ? (
           <p className="text-sm text-slate-500">No one signed up yet. Be the first!</p>
         ) : (
           <>
@@ -211,9 +215,10 @@ export function SessionCard({
         <button
           type="button"
           onClick={toggle}
-          disabled={busy}
+          disabled={busy || !rosterLoaded}
           className={cn(
             "w-full rounded-xl px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-50 sm:w-auto",
+            !rosterLoaded && "cursor-not-allowed",
             isRegistered
               ? "border border-slate-300 text-slate-700 hover:bg-slate-50"
               : isWaitlisted
@@ -223,15 +228,17 @@ export function SessionCard({
         >
           {busy
             ? "Working…"
-            : isRegistered
-              ? "Leave session"
-              : isWaitlisted
-                ? isFull
-                  ? "Leave waitlist"
-                  : "Join now"
-                : isFull
-                  ? "Join waitlist"
-                  : "Register"}
+            : !rosterLoaded
+              ? "Loading…"
+              : isRegistered
+                ? "Leave session"
+                : isWaitlisted
+                  ? isFull
+                    ? "Leave waitlist"
+                    : "Join now"
+                  : isFull
+                    ? "Join waitlist"
+                    : "Register"}
         </button>
       </div>
     </article>

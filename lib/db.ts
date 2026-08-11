@@ -394,19 +394,63 @@ export async function clearRating(ratedUid: string, raterUid: string): Promise<v
   });
 }
 
-const LEADERBOARD_TTL_MS = 60_000;
+const LEADERBOARD_TTL_MS = 600_000;
+const LEADERBOARD_CACHE_KEY = "sb:leaderboard:v1";
 let leaderboardCache: { data: LeaderboardEntry[]; expiresAt: number } | null = null;
+
+function readStoredLeaderboard(): { data: LeaderboardEntry[]; expiresAt: number } | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(LEADERBOARD_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      data: LeaderboardEntry[];
+      expiresAt: number;
+    };
+    if (!Array.isArray(parsed.data) || typeof parsed.expiresAt !== "number") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredLeaderboard(cached: {
+  data: LeaderboardEntry[];
+  expiresAt: number;
+}): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify(cached));
+  } catch {
+    // Quota/failure — the in-memory cache still works for this tab.
+  }
+}
 
 export function invalidateLeaderboardCache(): void {
   leaderboardCache = null;
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.removeItem(LEADERBOARD_CACHE_KEY);
+    } catch {
+      // Ignore storage failures; the memory cache is already cleared.
+    }
+  }
 }
 
 export async function fetchLeaderboard(
   raterUid: string,
   myRatings?: Record<string, number>
 ): Promise<LeaderboardEntry[]> {
-  const cached = leaderboardCache;
-  if (cached && cached.expiresAt > Date.now()) {
+  const now = Date.now();
+  let cached = leaderboardCache;
+  if (!cached || cached.expiresAt <= now) {
+    const stored = readStoredLeaderboard();
+    if (stored && stored.expiresAt > now) {
+      leaderboardCache = stored;
+      cached = stored;
+    }
+  }
+  if (cached) {
     return mergeMyStars(cached.data, raterUid, myRatings);
   }
 
@@ -430,10 +474,12 @@ export async function fetchLeaderboard(
       (a, b) => b.avg - a.avg || b.count - a.count || a.nickname.localeCompare(b.nickname)
     );
 
-  leaderboardCache = {
+  cached = {
     data: result,
     expiresAt: Date.now() + LEADERBOARD_TTL_MS,
   };
+  leaderboardCache = cached;
+  writeStoredLeaderboard(cached);
 
   return mergeMyStars(result, raterUid, myRatings);
 }

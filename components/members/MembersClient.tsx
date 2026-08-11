@@ -8,12 +8,7 @@ import { InfoTooltip } from "@/components/InfoTooltip";
 import { StarRating } from "@/components/StarRating";
 import { Spinner } from "@/components/Spinner";
 import { cn } from "@/lib/cn";
-import {
-  clearRating,
-  fetchLeaderboard,
-  invalidateLeaderboardCache,
-  setStars,
-} from "@/lib/db";
+import { clearRating, fetchLeaderboard, setStars } from "@/lib/db";
 import { applyRating } from "@/lib/leaderboard";
 import type { LeaderboardEntry } from "@/lib/types";
 
@@ -175,7 +170,6 @@ export function MembersClient({ currentUid }: { currentUid: string }) {
       } else {
         await setStars(ratedUid, currentUid, stars);
       }
-      invalidateLeaderboardCache();
       setEntries((prev) => (prev ? applyRating(prev, ratedUid, stars) : prev));
     } catch (err) {
       console.error(err);

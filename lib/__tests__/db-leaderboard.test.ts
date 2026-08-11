@@ -28,9 +28,25 @@ describe("fetchLeaderboard", () => {
   beforeEach(() => {
     h.getDocs.mockReset();
     db.invalidateLeaderboardCache();
+    const store = new Map<string, string>();
+    globalThis.localStorage = {
+      get length() {
+        return store.size;
+      },
+      clear: () => store.clear(),
+      key: (i: number) => [...store.keys()][i] ?? null,
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    };
   });
 
   afterEach(() => {
+    delete (globalThis as { localStorage?: unknown }).localStorage;
     db.invalidateLeaderboardCache();
   });
 
@@ -94,5 +110,81 @@ describe("fetchLeaderboard", () => {
     await db.fetchLeaderboard("me");
 
     expect(h.getDocs).toHaveBeenCalledTimes(2);
+  });
+
+  it("persists the fetched result to localStorage", async () => {
+    h.getDocs.mockResolvedValue(
+      makeQuerySnap(
+        [{ id: "u1", data: { nickname: "Ann", approved: true, ratingSum: 5, ratingCount: 1 } }],
+        "users"
+      )
+    );
+
+    await db.fetchLeaderboard("me");
+
+    const raw = globalThis.localStorage.getItem("sb:leaderboard:v1");
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!) as { data: { uid: string; avg: number; count: number }[] };
+    expect(parsed.data[0]).toMatchObject({ uid: "u1", avg: 5, count: 1 });
+  });
+
+  it("serves from a fresh localStorage cache with no Firestore read", async () => {
+    globalThis.localStorage.setItem(
+      "sb:leaderboard:v1",
+      JSON.stringify({
+        data: [
+          {
+            uid: "u1",
+            nickname: "Ann",
+            photoUrl: undefined,
+            avg: 3,
+            count: 4,
+            myStars: null,
+          },
+        ],
+        expiresAt: Date.now() + 600_000,
+      })
+    );
+
+    const result = await db.fetchLeaderboard("me", { u1: 3 });
+
+    expect(h.getDocs).not.toHaveBeenCalled();
+    expect(result.find((e) => e.uid === "u1")?.myStars).toBe(3);
+  });
+
+  it("refetches when the stored cache is expired", async () => {
+    globalThis.localStorage.setItem(
+      "sb:leaderboard:v1",
+      JSON.stringify({ data: [], expiresAt: Date.now() - 1_000 })
+    );
+    h.getDocs.mockResolvedValue(
+      makeQuerySnap([{ id: "u1", data: { nickname: "Ann", approved: true } }], "users")
+    );
+
+    await db.fetchLeaderboard("me");
+
+    expect(h.getDocs).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to a Firestore read when the stored JSON is corrupt", async () => {
+    globalThis.localStorage.setItem("sb:leaderboard:v1", "{not json");
+    h.getDocs.mockResolvedValue(
+      makeQuerySnap([{ id: "u1", data: { nickname: "Ann", approved: true } }], "users")
+    );
+
+    await db.fetchLeaderboard("me");
+
+    expect(h.getDocs).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the stored cache on invalidation", async () => {
+    globalThis.localStorage.setItem(
+      "sb:leaderboard:v1",
+      JSON.stringify({ data: [], expiresAt: Date.now() + 600_000 })
+    );
+
+    db.invalidateLeaderboardCache();
+
+    expect(globalThis.localStorage.getItem("sb:leaderboard:v1")).toBeNull();
   });
 });

@@ -157,12 +157,14 @@ regress these:
 - **`lib/useWhenVisible.ts`** — wraps every `onSnapshot` so the subscription is
   torn down while the browser tab is hidden. Any new real-time listener must use
   it (pass a `useCallback`'d subscribe function; it resubscribes on visibility).
-- **Leaderboard** (`MembersClient` + `fetchLeaderboard`): the base ranking is cached 60s
-  in `lib/db.ts` (`LEADERBOARD_TTL_MS`) as a single shared entry — `avg`/`count` come
+- **Leaderboard** (`MembersClient` + `fetchLeaderboard`): the base ranking is cached 10 min
+  in `lib/db.ts` (`LEADERBOARD_TTL_MS`) as a single shared entry, backed by a
+  memory + `localStorage` hybrid (`sb:leaderboard:v1`) so repeat visits, post-rating
+  re-renders, and other tabs serve with **zero reads** — `avg`/`count` come
   from each user doc's denormalized `ratingSum`/`ratingCount`, and the current user's
   own `myStars` are overlaid from their subscribed user doc's `myRatings`, so no
   `ratings` collection scan happens. Rating a player recomputes that row locally
-  (`applyRating`) and calls `invalidateLeaderboardCache()` (clears the shared entry) —
+  (`applyRating`) and does NOT invalidate the cache (the base refreshes on its TTL) —
   there is
   **no refetch after rating and no polling** (polling would blow the read budget).
   The Members page renders as cards on mobile and a `table-fixed` table on
@@ -172,12 +174,18 @@ regress these:
 - **Session registrations** (`SessionsView` + `AdminSessions`): ONE live
   `onSnapshot` on `sessions`. Rosters are **lazy**: a session's registrations and
   waitlist are fetched once on first view (and again on the "and N more" expand),
-  NOT re-read on every count change. When a count changes, only the current
+  NOT re-read on every count change. The **first** snapshot fetches every new
+  roster immediately (bypassing the debounce) so Home doesn't show a stale
+  "Signed up (0)" / "Join waitlist" flash; `SessionCard` gets a `rosterLoaded`
+  flag (`registrations[id] !== undefined`) and shows "Loading signups…" plus a
+  disabled button until the roster lands, while the "Signed up (N)" header uses
+  the session doc's authoritative `count`. When a count changes, only the current
   member's own `registrations/{me}` + `waitlist/{me}` docs are re-read — and only
   for sessions they have a stake in (`checkOwnStatus`); a waitlisted member's full
   waitlist is re-read so their queue position stays exact and auto-promotion is
-  detected. All re-fetches are coalesced through a 3s debounce
-  (`createDebouncedBatcher` in `lib/batch.ts`), and the per-snapshot read plan is
+  detected. Re-fetches after the first snapshot are coalesced through a 3s
+  debounce (`createDebouncedBatcher` in `lib/batch.ts`), and the per-snapshot read
+  plan is
   a pure function, `planRosterReads` in `lib/sessionReads.ts` (tested). Admin
   still re-reads a session's roster when its counts change (few admins), also
   debounced. Tracking lives in `countsRef` + `loadedRegsRef`/`loadedWlRef`
