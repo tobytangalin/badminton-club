@@ -137,11 +137,13 @@ regress these:
 - **`lib/useWhenVisible.ts`** — wraps every `onSnapshot` so the subscription is
   torn down while the browser tab is hidden. Any new real-time listener must use
   it (pass a `useCallback`'d subscribe function; it resubscribes on visibility).
-- **Leaderboard** (`MembersClient` + `fetchLeaderboard`): data is cached 60s per
-  rater in `lib/db.ts` (`LEADERBOARD_TTL_MS`). Rating a player recomputes that
-  row locally (`applyRating`) and calls `invalidateLeaderboardCache(raterUid)` —
-  scoped to that rater's cache entry so other raters stay warm (no-arg still
-  clears all) — there is
+- **Leaderboard** (`MembersClient` + `fetchLeaderboard`): the base ranking is cached 60s
+  in `lib/db.ts` (`LEADERBOARD_TTL_MS`) as a single shared entry — `avg`/`count` come
+  from each user doc's denormalized `ratingSum`/`ratingCount`, and the current user's
+  own `myStars` are overlaid from their subscribed user doc's `myRatings`, so no
+  `ratings` collection scan happens. Rating a player recomputes that row locally
+  (`applyRating`) and calls `invalidateLeaderboardCache()` (clears the shared entry) —
+  there is
   **no refetch after rating and no polling** (polling would blow the read budget).
   The Members page renders as cards on mobile and a `table-fixed` table on
   desktop — keep it that way so the page **never shows a horizontal scrollbar**.

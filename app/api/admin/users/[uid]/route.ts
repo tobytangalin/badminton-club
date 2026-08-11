@@ -43,6 +43,29 @@ export async function DELETE(
     received.forEach((d) => ratingIds.add(d.id));
     ratingIds.forEach((id) => batch.delete(db.collection("ratings").doc(id)));
 
+    // The ratings the target *gave* also count toward other users' denormalized
+    // aggregates, so decrement them (only if those user docs still exist).
+    const givenByRated = new Map<string, number>();
+    given.forEach((d) => {
+      const r = d.data() as { ratedUid: string; stars: number };
+      givenByRated.set(r.ratedUid, (givenByRated.get(r.ratedUid) ?? 0) + r.stars);
+    });
+    const ratedUserRefs = [...givenByRated.keys()].map((ratedUid) =>
+      db.collection("users").doc(ratedUid)
+    );
+    const existingRatedUsers = new Set(
+      ratedUserRefs.length
+        ? (await db.getAll(...ratedUserRefs)).filter((s) => s.exists).map((s) => s.id)
+        : []
+    );
+    givenByRated.forEach((sum, ratedUid) => {
+      if (!existingRatedUsers.has(ratedUid)) return;
+      batch.update(db.collection("users").doc(ratedUid), {
+        ratingCount: FieldValue.increment(-1),
+        ratingSum: FieldValue.increment(-sum),
+      });
+    });
+
     const regs = await db.collectionGroup("registrations").where("uid", "==", uid).get();
     const countsBySession = new Map<string, number>();
     regs.forEach((d) => {

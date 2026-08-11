@@ -34,6 +34,32 @@ service cloud.firestore {
     // Default role is 'member'. Only an admin (or the user themself without
     // changing their own role) may update a profile. The first admin is
     // bootstrapped server-side (see app/api/bootstrap).
+    //
+    // Denormalized rating aggregates: any approved member may nudge another
+    // user's ratingSum/ratingCount as part of a rating transaction. The
+    // written post-state is bounded to a valid average (1..5 stars) and either
+    // a rating doc for this rater exists or the count changed by one — rules
+    // can only read pre-transaction state, so the delta cannot be matched to
+    // the same-transaction rating write exactly.
+    function isRatingAggregateUpdate(uid) {
+      return isApproved()
+        && request.auth.uid != uid
+        && request.resource.data.diff(resource.data)
+            .affectedKeys().hasOnly(['ratingSum', 'ratingCount'])
+        && request.resource.data.ratingSum is int
+        && request.resource.data.ratingCount is int
+        && request.resource.data.ratingCount >= 0
+        && request.resource.data.ratingSum >= request.resource.data.ratingCount
+        && request.resource.data.ratingSum <= 5 * request.resource.data.ratingCount
+        && (
+          exists(/databases/$(database)/documents/ratings/$(uid)_$(request.auth.uid))
+          || request.resource.data.ratingCount
+            == ('ratingCount' in resource.data ? resource.data.ratingCount : 0) + 1
+          || request.resource.data.ratingCount
+            == ('ratingCount' in resource.data ? resource.data.ratingCount : 0) - 1
+        );
+    }
+
     match /users/{uid} {
       allow read: if signedIn();
       allow create: if isSelf(uid)
@@ -43,6 +69,7 @@ service cloud.firestore {
       allow update: if (isSelf(uid)
           && request.resource.data.role == resource.data.role
           && request.resource.data.approved == resource.data.approved)
+        || isRatingAggregateUpdate(uid)
         || isAdmin();
       allow delete: if isAdmin();
     }

@@ -1,6 +1,5 @@
 import {
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -333,88 +332,119 @@ export async function setStars(
   stars: number
 ): Promise<void> {
   const db = getDb();
-  const ref = doc(db, "ratings", ratingId(ratedUid, raterUid));
-  const snap = await getDoc(ref);
-  if (snap.exists()) {
-    await updateDoc(ref, { stars });
-  } else {
-    await setDoc(ref, {
+  const ratingRef = doc(db, "ratings", ratingId(ratedUid, raterUid));
+  const ratedRef = userDoc(ratedUid);
+  const raterRef = userDoc(raterUid);
+  await runTransaction(db, async (tx) => {
+    // All reads first (Firestore forbids reads after writes in a transaction).
+    const [ratingSnap, ratedSnap, raterSnap] = await Promise.all([
+      tx.get(ratingRef),
+      tx.get(ratedRef),
+      tx.get(raterRef),
+    ]);
+    const rated = ratedSnap.data() as UserDoc | undefined;
+    const rater = raterSnap.data() as UserDoc | undefined;
+
+    const prevStars = ratingSnap.exists()
+      ? (ratingSnap.data() as Rating).stars
+      : null;
+    const ratedSum = (rated?.ratingSum ?? 0) + (stars - (prevStars ?? 0));
+    const ratedCount = (rated?.ratingCount ?? 0) + (prevStars === null ? 1 : 0);
+
+    tx.set(ratingRef, {
       ratedUid,
       raterUid,
       stars,
-      createdAt: serverTimestamp(),
+      createdAt: ratingSnap.exists()
+        ? (ratingSnap.data() as Rating).createdAt
+        : serverTimestamp(),
     } satisfies Rating);
-  }
+
+    tx.update(ratedRef, { ratingSum: ratedSum, ratingCount: ratedCount });
+    tx.update(raterRef, {
+      myRatings: { ...(rater?.myRatings ?? {}), [ratedUid]: stars },
+    });
+  });
 }
 
 export async function clearRating(ratedUid: string, raterUid: string): Promise<void> {
   const db = getDb();
-  await deleteDoc(doc(db, "ratings", ratingId(ratedUid, raterUid)));
+  const ratingRef = doc(db, "ratings", ratingId(ratedUid, raterUid));
+  const ratedRef = userDoc(ratedUid);
+  const raterRef = userDoc(raterUid);
+  await runTransaction(db, async (tx) => {
+    const [ratingSnap, ratedSnap, raterSnap] = await Promise.all([
+      tx.get(ratingRef),
+      tx.get(ratedRef),
+      tx.get(raterRef),
+    ]);
+    if (!ratingSnap.exists()) return;
+    const { stars } = ratingSnap.data() as Rating;
+    const rated = ratedSnap.data() as UserDoc | undefined;
+    const rater = raterSnap.data() as UserDoc | undefined;
+
+    tx.delete(ratingRef);
+    tx.update(ratedRef, {
+      ratingSum: Math.max(0, (rated?.ratingSum ?? 0) - stars),
+      ratingCount: Math.max(0, (rated?.ratingCount ?? 0) - 1),
+    });
+    const myRatings = { ...(rater?.myRatings ?? {}) };
+    delete myRatings[ratedUid];
+    tx.update(raterRef, { myRatings });
+  });
 }
 
 const LEADERBOARD_TTL_MS = 60_000;
-const leaderboardCache = new Map<string, { data: LeaderboardEntry[]; expiresAt: number }>();
+let leaderboardCache: { data: LeaderboardEntry[]; expiresAt: number } | null = null;
 
-export function invalidateLeaderboardCache(raterUid?: string): void {
-  if (raterUid) {
-    leaderboardCache.delete(raterUid);
-  } else {
-    leaderboardCache.clear();
-  }
+export function invalidateLeaderboardCache(): void {
+  leaderboardCache = null;
 }
 
 export async function fetchLeaderboard(
-  raterUid: string
+  raterUid: string,
+  myRatings?: Record<string, number>
 ): Promise<LeaderboardEntry[]> {
-  const cached = leaderboardCache.get(raterUid);
+  const cached = leaderboardCache;
   if (cached && cached.expiresAt > Date.now()) {
-    return cached.data;
+    return mergeMyStars(cached.data, raterUid, myRatings);
   }
 
-  const db = getDb();
-  const [usersSnap, ratingsSnap] = await Promise.all([
-    getDocs(usersRef()),
-    getDocs(collection(db, "ratings")),
-  ]);
-
-  const users = usersSnap.docs
+  const usersSnap = await getDocs(usersRef());
+  const result = usersSnap.docs
     .filter((d) => d.data().approved ?? true)
-    .map((d) => ({
-      uid: d.id,
-      nickname: (d.data().nickname as string) ?? "",
-      photoUrl: (d.data().photoUrl as string) ?? undefined,
-    }));
-
-  const byRated = new Map<string, number[]>();
-  const myStars = new Map<string, number>();
-  for (const d of ratingsSnap.docs) {
-    const r = d.data() as Rating;
-    if (!byRated.has(r.ratedUid)) byRated.set(r.ratedUid, []);
-    byRated.get(r.ratedUid)!.push(r.stars);
-    if (r.raterUid === raterUid) myStars.set(r.ratedUid, r.stars);
-  }
-
-  const result = users
-    .map((u) => {
-      const all = byRated.get(u.uid) ?? [];
-      const sum = all.reduce((a, b) => a + b, 0);
+    .map((d) => {
+      const data = d.data() as UserDoc;
+      const count = data.ratingCount ?? 0;
+      const avg = count > 0 ? (data.ratingSum ?? 0) / count : 0;
       return {
-        ...u,
-        avg: all.length ? sum / all.length : 0,
-        count: all.length,
-        myStars: myStars.get(u.uid) ?? null,
+        uid: d.id,
+        nickname: (data.nickname as string) ?? "",
+        photoUrl: data.photoUrl ?? undefined,
+        avg,
+        count,
+        myStars: null,
       };
     })
     .sort(
       (a, b) => b.avg - a.avg || b.count - a.count || a.nickname.localeCompare(b.nickname)
     );
 
-  leaderboardCache.set(raterUid, {
+  leaderboardCache = {
     data: result,
     expiresAt: Date.now() + LEADERBOARD_TTL_MS,
-  });
+  };
 
-  return result;
+  return mergeMyStars(result, raterUid, myRatings);
+}
+
+/** Overlay the current user's own ratings onto the shared base leaderboard. */
+function mergeMyStars(
+  base: LeaderboardEntry[],
+  raterUid: string,
+  myRatings?: Record<string, number>
+): LeaderboardEntry[] {
+  return base.map((e) => ({ ...e, myStars: myRatings?.[e.uid] ?? null }));
 }
 
 export async function createSession(

@@ -9,6 +9,12 @@ export interface UserDoc {
   /** Whether an admin has approved this membership. New accounts start false;
    *  absent on legacy docs is treated as approved. */
   approved?: boolean;
+  /** Sum of all stars this user has received (with `ratingCount` gives avg). */
+  ratingSum?: number;
+  /** How many ratings this user has received. */
+  ratingCount?: number;
+  /** Ratings this user gave, keyed by ratedUid. */
+  myRatings?: Record<string, number>;
   createdAt?: unknown;
 }
 
