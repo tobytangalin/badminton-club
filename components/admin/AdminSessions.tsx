@@ -11,15 +11,15 @@ import {
   adminApplyParticipantChanges,
   createSession,
   deleteSession,
+  fetchMembers,
   registrationsRef,
   sessionsRef,
   updateSession,
-  usersRef,
   waitlistRef,
 } from "@/lib/db";
 import { useWhenVisible } from "@/lib/useWhenVisible";
-import type { ParticipantToAdd } from "@/lib/db";
-import type { Registration, SessionDoc, UserDoc, WaitlistEntry } from "@/lib/types";
+import type { MemberSummary, ParticipantToAdd } from "@/lib/db";
+import type { Registration, SessionDoc, WaitlistEntry } from "@/lib/types";
 
 interface SessionEntry {
   id: string;
@@ -51,7 +51,7 @@ const emptyForm: FormState = {
 const PREVIEW_COUNT = 8;
 
 /** Older sessions are not fetched by the admin list (records stay in Firestore). */
-const PAST_WINDOW_DAYS = 60;
+const PAST_WINDOW_DAYS = 30;
 
 /** Coalesce roster re-fetches into one read per session per window. */
 const ROSTER_REFRESH_MS = 3_000;
@@ -68,7 +68,7 @@ export function AdminSessions() {
   const [sessions, setSessions] = useState<SessionEntry[] | null>(null);
   const [registrations, setRegistrations] = useState<Record<string, Registration[]>>({});
   const [waitlists, setWaitlists] = useState<Record<string, WaitlistEntry[]>>({});
-  const [users, setUsers] = useState<{ uid: string; data: UserDoc }[] | null>(null);
+  const [users, setUsers] = useState<MemberSummary[] | null>(null);
   const [form, setForm] = useState<FormState>(() => ({ ...emptyForm, date: todayString() }));
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -90,6 +90,7 @@ export function AdminSessions() {
   const countsRef = useRef<Record<string, string>>({});
   const loadedRegsRef = useRef<Set<string>>(new Set());
   const loadedWlRef = useRef<Set<string>>(new Set());
+  const firstSnapshotRef = useRef(true);
 
   const loadRegistrations = useCallback(async (ids: string[]) => {
     try {
@@ -211,19 +212,22 @@ export function AdminSessions() {
         );
 
         if (changedRegs.length > 0 || changedWl.length > 0) {
-          scheduleFetches(changedRegs, changedWl);
+          if (firstSnapshotRef.current) {
+            void loadRegistrations(changedRegs);
+            void loadWaitlists(changedWl);
+          } else {
+            scheduleFetches(changedRegs, changedWl);
+          }
         }
+        firstSnapshotRef.current = false;
       }
     );
     return unsub;
-  }, [scheduleFetches]);
+  }, [scheduleFetches, loadRegistrations, loadWaitlists]);
 
-  const usersLoadedAtRef = useRef(0);
   const loadUsers = useCallback(async (force = false) => {
-    if (!force && usersLoadedAtRef.current > Date.now() - 60_000) return;
-    const snap = await getDocs(usersRef());
-    setUsers(snap.docs.map((d) => ({ uid: d.id, data: d.data() as UserDoc })));
-    usersLoadedAtRef.current = Date.now();
+    const list = await fetchMembers(force);
+    setUsers(list);
   }, []);
 
   useWhenVisible(subscribeSessions);
@@ -389,7 +393,7 @@ export function AdminSessions() {
     setError("");
     if (toAdd.length > 0 && !users) {
       try {
-        await loadUsers(true);
+        await loadUsers();
       } catch (err) {
         console.error(err);
         setError("Could not load members.");
@@ -404,8 +408,8 @@ export function AdminSessions() {
           if (!user) return null;
           return {
             uid,
-            nickname: user.data.nickname,
-            photoUrl: user.data.photoUrl,
+            nickname: user.nickname,
+            photoUrl: user.photoUrl,
           };
         })
         .filter((x): x is ParticipantToAdd => x !== null);
@@ -424,14 +428,15 @@ export function AdminSessions() {
   function renderSession(s: SessionEntry) {
     const regs = registrations[s.id] ?? [];
     const wl = waitlists[s.id] ?? [];
+    const rosterLoaded = registrations[s.id] !== undefined;
     const expanded = !!expandedPlayers[s.id];
     const shown = expanded ? regs : regs.slice(0, PREVIEW_COUNT);
     const members = (users ?? [])
       .slice()
-      .sort((a, b) => a.data.nickname.localeCompare(b.data.nickname));
+      .sort((a, b) => a.nickname.localeCompare(b.nickname));
     const search = (addSearch[s.id] ?? "").toLowerCase();
     const filtered = search
-      ? members.filter((u) => (u.data.nickname || "").toLowerCase().includes(search))
+      ? members.filter((u) => (u.nickname || "").toLowerCase().includes(search))
       : members;
     const selected = addSelected[s.id] ?? [];
     const selectedSet = new Set(selected);
@@ -450,9 +455,9 @@ export function AdminSessions() {
               <p className="text-sm text-slate-500">{s.data.description}</p>
             )}
             <p className="text-sm text-slate-500">
-              {regs.length}
+              {s.data.count}
               {typeof s.data.capacity === "number" ? `/${s.data.capacity}` : ""} signed up
-              {wl.length > 0 && ` · ${wl.length} on waitlist`}
+              {(s.data.waitlistCount ?? 0) > 0 && ` · ${s.data.waitlistCount} on waitlist`}
             </p>
           </div>
           <div className="flex shrink-0 gap-2">
@@ -480,44 +485,52 @@ export function AdminSessions() {
           </div>
         </div>
 
-        {regs.length > 0 && (
-          <ul className="mt-3 space-y-1">
-            {shown.map((r) => (
-              <li key={r.uid} className="flex items-center gap-2 text-sm">
-                <Avatar src={r.photoUrl} name={r.nickname} size="sm" />
-                <span className="flex-1">{r.nickname}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+        {!rosterLoaded ? (
+          <p className="mt-3 text-sm text-slate-500">Loading participants…</p>
+        ) : (
+          <>
+            {regs.length > 0 && (
+              <ul className="mt-3 space-y-1">
+                {shown.map((r) => (
+                  <li key={r.uid} className="flex items-center gap-2 text-sm">
+                    <Avatar src={r.photoUrl} name={r.nickname} size="sm" />
+                    <span className="flex-1">{r.nickname}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
 
-        {regs.length > PREVIEW_COUNT && (
-          <button
-            type="button"
-            onClick={() =>
-              setExpandedPlayers((prev) => ({ ...prev, [s.id]: !expanded }))
-            }
-            className="mt-2 text-sm font-semibold text-teal-700 hover:text-teal-800"
-          >
-            {expanded ? "Show fewer" : `Show all (${regs.length})`}
-          </button>
-        )}
+            {regs.length > PREVIEW_COUNT && (
+              <button
+                type="button"
+                onClick={() =>
+                  setExpandedPlayers((prev) => ({ ...prev, [s.id]: !expanded }))
+                }
+                className="mt-2 text-sm font-semibold text-teal-700 hover:text-teal-800"
+              >
+                {expanded ? "Show fewer" : `Show all (${regs.length})`}
+              </button>
+            )}
 
-        {wl.length > 0 && (
-          <div className="mt-3 rounded-lg bg-indigo-50 p-2.5">
-            <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-indigo-700">
-              Waitlist ({wl.length})
-            </p>
-            <ul className="space-y-1">
-              {wl.map((w) => (
-                <li key={w.uid} className="flex items-center gap-2 text-sm">
-                  <Avatar src={w.photoUrl} name={w.nickname} size="sm" />
-                  <span className="flex-1">{w.nickname}</span>
-                  <span className="text-xs text-slate-500">auto-promoted on spot open</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+            {wl.length > 0 && (
+              <div className="mt-3 rounded-lg bg-indigo-50 p-2.5">
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-indigo-700">
+                  Waitlist ({wl.length})
+                </p>
+                <ul className="space-y-1">
+                  {wl.map((w) => (
+                    <li key={w.uid} className="flex items-center gap-2 text-sm">
+                      <Avatar src={w.photoUrl} name={w.nickname} size="sm" />
+                      <span className="flex-1">{w.nickname}</span>
+                      <span className="text-xs text-slate-500">
+                        auto-promoted on spot open
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
         )}
 
         <div className="mt-3 border-t border-slate-100 pt-3">
@@ -547,8 +560,8 @@ export function AdminSessions() {
                           onChange={() => toggleSelect(s.id, u.uid)}
                           className="size-4"
                         />
-                        <Avatar src={u.data.photoUrl} name={u.data.nickname} size="sm" />
-                        <span className="truncate">{u.data.nickname || "Unnamed"}</span>
+                        <Avatar src={u.photoUrl} name={u.nickname} size="sm" />
+                        <span className="truncate">{u.nickname || "Unnamed"}</span>
                       </label>
                     </li>
                   ))

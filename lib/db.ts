@@ -398,43 +398,45 @@ const LEADERBOARD_TTL_MS = 600_000;
 const LEADERBOARD_CACHE_KEY = "sb:leaderboard:v1";
 let leaderboardCache: { data: LeaderboardEntry[]; expiresAt: number } | null = null;
 
-function readStoredLeaderboard(): { data: LeaderboardEntry[]; expiresAt: number } | null {
+function readStoredCache<T>(key: string): { data: T; expiresAt: number } | null {
   if (typeof localStorage === "undefined") return null;
   try {
-    const raw = localStorage.getItem(LEADERBOARD_CACHE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as {
-      data: LeaderboardEntry[];
-      expiresAt: number;
-    };
-    if (!Array.isArray(parsed.data) || typeof parsed.expiresAt !== "number") return null;
+    const parsed = JSON.parse(raw) as { data: T; expiresAt: number };
+    if (typeof parsed.expiresAt !== "number") return null;
     return parsed;
   } catch {
     return null;
   }
 }
 
-function writeStoredLeaderboard(cached: {
-  data: LeaderboardEntry[];
-  expiresAt: number;
-}): void {
+function writeStoredCache<T>(key: string, cached: { data: T; expiresAt: number }): void {
   if (typeof localStorage === "undefined") return;
   try {
-    localStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify(cached));
+    localStorage.setItem(key, JSON.stringify(cached));
   } catch {
-    // Quota/failure — the in-memory cache still works for this tab.
+    // Storage quota/failure — the in-memory cache still works for this tab.
   }
+}
+
+function removeStoredCache(key: string): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures; the in-memory cache is the source of truth.
+  }
+}
+
+function readStoredLeaderboard(): { data: LeaderboardEntry[]; expiresAt: number } | null {
+  const cached = readStoredCache<LeaderboardEntry[]>(LEADERBOARD_CACHE_KEY);
+  return cached && Array.isArray(cached.data) ? cached : null;
 }
 
 export function invalidateLeaderboardCache(): void {
   leaderboardCache = null;
-  if (typeof localStorage !== "undefined") {
-    try {
-      localStorage.removeItem(LEADERBOARD_CACHE_KEY);
-    } catch {
-      // Ignore storage failures; the memory cache is already cleared.
-    }
-  }
+  removeStoredCache(LEADERBOARD_CACHE_KEY);
 }
 
 export async function fetchLeaderboard(
@@ -479,7 +481,7 @@ export async function fetchLeaderboard(
     expiresAt: Date.now() + LEADERBOARD_TTL_MS,
   };
   leaderboardCache = cached;
-  writeStoredLeaderboard(cached);
+  writeStoredCache(LEADERBOARD_CACHE_KEY, cached);
 
   return mergeMyStars(result, raterUid, myRatings);
 }
@@ -491,6 +493,54 @@ function mergeMyStars(
   myRatings?: Record<string, number>
 ): LeaderboardEntry[] {
   return base.map((e) => ({ ...e, myStars: myRatings?.[e.uid] ?? null }));
+}
+
+const MEMBERS_TTL_MS = 600_000;
+const MEMBERS_CACHE_KEY = "sb:members:v1";
+let membersCache: { data: MemberSummary[]; expiresAt: number } | null = null;
+
+/** Lightweight member summary for pickers; excludes per-user rating aggregates. */
+export interface MemberSummary {
+  uid: string;
+  nickname: string;
+  photoUrl?: string;
+}
+
+/**
+ * Full `users` list for the admin participant picker, cached 10 min in a
+ * memory + localStorage hybrid (same pattern as the leaderboard) so opening
+ * the picker repeatedly costs zero reads. Pass `force` to bypass the cache.
+ */
+export async function fetchMembers(force = false): Promise<MemberSummary[]> {
+  const now = Date.now();
+  if (!force) {
+    let cached = membersCache;
+    if (!cached || cached.expiresAt <= now) {
+      const stored = readStoredCache<MemberSummary[]>(MEMBERS_CACHE_KEY);
+      if (stored && stored.expiresAt > now && Array.isArray(stored.data)) {
+        membersCache = stored;
+        cached = stored;
+      }
+    }
+    if (cached) return cached.data;
+  }
+
+  const snap = await getDocs(usersRef());
+  const data = snap.docs.map((d) => {
+    const u = d.data() as UserDoc;
+    return { uid: d.id, nickname: u.nickname ?? "", photoUrl: u.photoUrl };
+  });
+
+  const cached = { data, expiresAt: Date.now() + MEMBERS_TTL_MS };
+  membersCache = cached;
+  writeStoredCache(MEMBERS_CACHE_KEY, cached);
+
+  return data;
+}
+
+export function invalidateMembersCache(): void {
+  membersCache = null;
+  removeStoredCache(MEMBERS_CACHE_KEY);
 }
 
 export async function createSession(

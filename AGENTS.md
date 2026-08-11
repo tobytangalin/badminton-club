@@ -135,12 +135,15 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
   known until the session happens). The
   list is split into Upcoming and a collapsible Past section; `AdminPanel`
   defaults to the Sessions tab. The sessions query is capped to the last
-  `PAST_WINDOW_DAYS` (60) so older docs are never fetched (records stay in
+  `PAST_WINDOW_DAYS` (30) so older docs are never fetched (records stay in
   Firestore); past sessions' registrations/waitlists are only loaded when the
   Past section is expanded (`showPastRef` + `loadPastDetails`), and the Home
   sessions listener only queries upcoming. Each session's player list is capped
   at 8 with a "Show all" toggle; "Manage participants" opens a searchable
-  checkbox picker (add/remove in bulk, applies via `adminApplyParticipantChanges`).
+  checkbox picker (add/remove in bulk, applies via `adminApplyParticipantChanges`);
+  the member list it needs comes from `fetchMembers` in `lib/db.ts`, a 10-min
+  memory + `localStorage` cache (`sb:members:v1`) so repeated picker opens cost
+  zero reads.
   "Copy settings" pre-fills the Add form with a session's date/times/location/
   capacity (cost and playersOverride stay empty) to create a new session. The
   form validates: new sessions can't be dated in the past (date `min` + submit
@@ -175,11 +178,13 @@ regress these:
   `onSnapshot` on `sessions`. Rosters are **lazy**: a session's registrations and
   waitlist are fetched once on first view (and again on the "and N more" expand),
   NOT re-read on every count change. The **first** snapshot fetches every new
-  roster immediately (bypassing the debounce) so Home doesn't show a stale
-  "Signed up (0)" / "Join waitlist" flash; `SessionCard` gets a `rosterLoaded`
-  flag (`registrations[id] !== undefined`) and shows "Loading signups…" plus a
+  roster immediately (bypassing the debounce) so Home and Admin don't show a
+  stale "Signed up (0)" flash; Home's `SessionCard` gets a `rosterLoaded` flag
+  (`registrations[id] !== undefined`) and shows "Loading signups…" plus a
   disabled button until the roster lands, while the "Signed up (N)" header uses
-  the session doc's authoritative `count`. When a count changes, only the current
+  the session doc's authoritative `count`; Admin shows "Loading participants…"
+  until its roster loads and its counts also come from the session doc. When a
+  count changes, only the current
   member's own `registrations/{me}` + `waitlist/{me}` docs are re-read — and only
   for sessions they have a stake in (`checkOwnStatus`); a waitlisted member's full
   waitlist is re-read so their queue position stays exact and auto-promotion is
@@ -231,8 +236,9 @@ regress these:
   - **DB usage tests** (`lib/__tests__/db-*.test.ts`) mock `firebase/firestore` +
     `@/lib/firebase` (`lib/__tests__/helpers/firestore.ts`) and assert EXACT
     read/write call counts and ordering — e.g. `fetchLeaderboard` does exactly 1
-    `users` read and 0 `ratings` reads and serves the 60s cache with 0 reads;
-    `setStars`/`clearRating` do 3 reads → 3 writes. The fake transaction throws
+    `users` read and 0 `ratings` reads and serves the 10-min cache with 0 reads;
+    `fetchMembers` serves repeat picker loads from the cache with 0 reads and
+    `force` bypasses it; `setStars`/`clearRating` do 3 reads → 3 writes. The fake transaction throws
     on a read after the first write, so the "all reads before all writes" rule
     is enforced by the tests too.
   - **Read-planning**: `planRosterReads` (`lib/sessionReads.ts`) is tested for
