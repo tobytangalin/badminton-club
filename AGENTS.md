@@ -31,6 +31,8 @@ Cloud Run, 50k reads / 20k writes per day Firestore, 50k MAU Firebase Auth).
 - `npm run lint` — ESLint (react-hooks/set-state-in-effect is strict: no sync
   setState inside effects; call setState in async callbacks/then chains instead)
 - `npm run typecheck` — `tsc --noEmit`
+- `npm run test` — vitest suite (pure unit tests + Firestore usage tests with a
+  mocked SDK; keeps the free-tier read/write patterns honest)
 
 ## Architecture at a glance
 
